@@ -2,7 +2,7 @@
 /ytm-playlist-dl
 /ytm-playlist-dl-web
 /dist/
-/bin/
+/bin
 *.exe
 *.test
 coverage.out
