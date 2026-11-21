@@ -174,7 +174,7 @@ if [[ "$DESKTOP" -eq 1 ]]; then
   echo "Building Wails v3 desktop application for $OS/$ARCH"
   CGO_ENABLED=0 GOOS="$OS" GOARCH="$ARCH" go build -trimpath \
     -tags purego,production \
-    -ldflags "-s -w" \
+    -ldflags "-s -w -X github.com/Mikan256/ytm-playlist-dl/internal/cli.Version=$VERSION" \
     -o "$OUT/ytm-playlist-dl-desktop$SUFFIX" \
     "$ROOT/cmd/ytm-playlist-dl-desktop"
 fi

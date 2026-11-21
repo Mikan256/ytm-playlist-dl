@@ -32,6 +32,7 @@ if [[ -z "$BUNDLE" ]]; then
   echo "--bundle is required" >&2
   exit 2
 fi
+BUNDLE="$(cd "$BUNDLE" && pwd)"
 if ! command -v makensis >/dev/null 2>&1; then
   echo "makensis (NSIS) is required. Install nsis and retry." >&2
   exit 1
@@ -47,6 +48,7 @@ if [[ -z "$OUT" ]]; then
   OUT="$(dirname "$BUNDLE")/ytm-playlist-dl-${VERSION}-windows-amd64-setup.exe"
 fi
 mkdir -p "$(dirname "$OUT")"
+OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
 
 echo "Building Windows installer: $OUT"
 makensis -V2 \
