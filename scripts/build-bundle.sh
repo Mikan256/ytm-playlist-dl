@@ -169,10 +169,8 @@ CGO_ENABLED=0 GOOS="$OS" GOARCH="$ARCH" go build -trimpath \
 
 # --- notices and documentation -------------------------------------------
 cp "$ROOT/README.md" "$ROOT/SPEC.md" "$ROOT/THIRD_PARTY_NOTICES.md" "$OUT/"
-download "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/LICENSE" \
-  "$OUT/LICENSES/yt-dlp-Unlicense.txt" || true
-download "https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.GPLv3" \
-  "$OUT/LICENSES/FFmpeg-GPLv3.txt" || true
+cp "$ROOT/LICENSE" "$OUT/"
+cp -R "$ROOT/LICENSES/." "$OUT/LICENSES/"
 
 chmod +x "$OUT/ytm-playlist-dl$SUFFIX" "$OUT/ytm-playlist-dl-web$SUFFIX"
 mkdir -p "$ROOT/dist"

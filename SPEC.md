@@ -39,6 +39,8 @@ ytm-playlist-dl/
 ├── web/
 │   ├── embed.go               # 静的ファイルの埋め込み
 │   └── static/                # HTML / CSS / JavaScript
+├── LICENSE                    # このプロジェクトの MIT ライセンス
+├── LICENSES/                  # 第三者ライセンス全文
 ├── THIRD_PARTY_NOTICES.md
 ├── go.mod
 ├── go.sum
@@ -244,3 +246,16 @@ go vet ./...
 - FLAC 出力でも元音源以上の音質にはならない
 - original 形式のアルバム正規化では再エンコードされる
 - yt-dlp / ffmpeg は外部依存
+
+## ライセンス
+- このリポジトリの自作コード: MIT License（`LICENSE`）
+- yt-dlp: Unlicense（`LICENSES/yt-dlp-Unlicense.txt`）
+- FFmpeg / ffprobe: GPL-3.0 または LGPL-2.1（ビルドによる。
+  `LICENSES/FFmpeg-GPLv3.txt`、`LICENSES/FFmpeg-LGPLv2.1.txt`）
+- Go runtime: BSD-3-Clause（`LICENSES/Go-BSD-3-Clause.txt`）
+- github.com/spf13/pflag: BSD-3-Clause
+  （`LICENSES/pflag-BSD-3-Clause.txt`）
+
+ポータブル配布物には `LICENSE`、`THIRD_PARTY_NOTICES.md`、`LICENSES/` を
+同梱する。FFmpeg の GPL ビルドを再配布する場合は、対応するソースコードの
+提供など GPL の条件を満たすこと。

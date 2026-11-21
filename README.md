@@ -85,6 +85,7 @@ ytm-playlist-dl-linux-amd64/
 │   ├── yt-dlp
 │   ├── ffmpeg
 │   └── ffprobe
+├── LICENSE
 ├── LICENSES/
 ├── README.md
 ├── SPEC.md
@@ -117,9 +118,31 @@ ytm-playlist-dl-linux-amd64/
 - YouTube 側の変更で yt-dlp の更新が必要になることがあります。
   その場合は `bin/yt-dlp` を新しいものに差し替えるか、`--yt-dlp PATH` を指定してください。
 - ffmpeg のライセンスはビルドによって異なります。同梱・再配布時は
-  `THIRD_PARTY_NOTICES.md` と `LICENSES/` を必ず同梱してください。
+  `THIRD_PARTY_NOTICES.md`、`LICENSE`、`LICENSES/` を必ず同梱してください。
 - GitHub Actions の `Build portable bundles` ワークフローでも
   Linux / macOS / Windows 向けバンドルを生成できます。
+
+## ライセンス
+
+このリポジトリの自作コードは **MIT License** です。全文は `LICENSE` を
+参照してください。
+
+同梱・利用する第三者ソフトウェアは、それぞれのライセンスに従います。
+
+- yt-dlp: Unlicense
+- FFmpeg / ffprobe: GPL-3.0 または LGPL-2.1（ビルドによる）
+- Go runtime / standard library: BSD-3-Clause
+- github.com/spf13/pflag: BSD-3-Clause
+
+詳細と全文:
+
+- `THIRD_PARTY_NOTICES.md`
+- `LICENSES/README.md`
+- `LICENSES/FFmpeg-SOURCE.md`
+
+ポータブル配布物には `LICENSE`、`THIRD_PARTY_NOTICES.md`、`LICENSES/` が
+自動的に同梱されます。FFmpeg の GPL ビルドを再配布する場合は、対応する
+ソースコードの提供など GPL の条件を満たす必要があります。
 
 ## CLI
 
