@@ -20,6 +20,7 @@ licenses are listed below. Full license texts are in `LICENSES/`.
 | coder/websocket | ISC | `LICENSES/coder-websocket-ISC.txt` |
 | golang.org/x/sys | BSD-3-Clause | `LICENSES/x-sys-BSD-3-Clause.txt` |
 | golang.org/x/term | BSD-3-Clause | `LICENSES/x-term-BSD-3-Clause.txt` |
+| golang.org/x/mod | BSD-3-Clause | `LICENSES/x-mod-BSD-3-Clause.txt` |
 | github.com/spf13/pflag | BSD-3-Clause | `LICENSES/pflag-BSD-3-Clause.txt` |
 
 ## yt-dlp
@@ -76,6 +77,8 @@ The desktop application uses Wails v3 for the native window.
   (`LICENSES/x-sys-BSD-3-Clause.txt`)
 - golang.org/x/term: BSD-3-Clause
   (`LICENSES/x-term-BSD-3-Clause.txt`)
+- golang.org/x/mod: BSD-3-Clause
+  (`LICENSES/x-mod-BSD-3-Clause.txt`)
 
 The desktop app uses the operating system's WebView (WebView2, WKWebView,
 GTK/WebKitGTK). Those runtime libraries are not relicensed by this project.

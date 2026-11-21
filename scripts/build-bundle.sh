@@ -13,7 +13,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OS="$(go env GOOS)"
 ARCH="$(go env GOARCH)"
 OUT=""
-VERSION="${VERSION:-0.4.1}"
+VERSION="${VERSION:-0.5.0}"
 YTDLP_PATH=""
 FFMPEG_PATH=""
 FFPROBE_PATH=""
@@ -27,7 +27,7 @@ Options:
   --os OS              linux, darwin or windows (default: go env GOOS)
   --arch ARCH          amd64 or arm64 (default: go env GOARCH)
   --out DIR            output directory (default: dist/ytm-playlist-dl-OS-ARCH)
-  --version VERSION    version embedded in the binaries (default: 0.4.1)
+  --version VERSION    version embedded in the binaries (default: 0.5.0)
   --yt-dlp PATH        use a local yt-dlp instead of downloading
   --ffmpeg PATH        use a local ffmpeg instead of downloading
   --ffprobe PATH       use a local ffprobe instead of downloading

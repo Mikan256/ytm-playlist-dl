@@ -77,8 +77,8 @@ scripts/build-bundle.sh \
 
 ```text
 dist/
-├── ytm-playlist-dl-0.4.1-linux-amd64.tar.gz
-├── ytm-playlist-dl-0.4.1-windows-amd64.zip
+├── ytm-playlist-dl-0.5.0-linux-amd64.tar.gz
+├── ytm-playlist-dl-0.5.0-windows-amd64.zip
 └── ...
 ```
 
@@ -126,7 +126,7 @@ ytm-playlist-dl-linux-amd64/
   その場合は `bin/yt-dlp` を新しいものに差し替えるか、`--yt-dlp PATH` を指定してください。
 - ffmpeg のライセンスはビルドによって異なります。同梱・再配布時は
   `THIRD_PARTY_NOTICES.md`、`LICENSE`、`LICENSES/` を必ず同梱してください。
-- GitHub Actions の `Build portable bundles` ワークフローでも
+- GitHub Actions の `Build and release` ワークフローでも
   Linux / macOS / Windows 向けバンドルを生成できます。
 
 ## ライセンス
@@ -263,10 +263,22 @@ Web UI では以下が可能です。
 | `GET` | `/api/jobs/<id>/archive` | ZIPアーカイブ |
 | `GET` | `/health` | ヘルスチェック |
 
+デスクトップ版では追加で以下を使用します。
+
+| メソッド | パス | 内容 |
+| --- | --- | --- |
+| `GET` | `/api/desktop/info` | デスクトップ判定・バージョン |
+| `POST` | `/api/desktop/choose-directory` | 出力フォルダ選択 |
+| `POST` | `/api/desktop/open` | フォルダ / ファイルを開く |
+| `POST` | `/api/desktop/update` | 更新確認 |
+
 ## デスクトップ版（Wails v3）
 
 既存の Web UI を Wails v3 のネイティブウィンドウで表示します。
 UI・設定・ダウンロード処理・Web API はブラウザ版と共通です。
+
+今回のデスクトップ配布・自動更新・インストーラは **Linux / Windows** が対象です。
+macOS は対象外です。
 
 ```bash
 CGO_ENABLED=0 go build -tags purego,production \
@@ -286,6 +298,16 @@ Wails v3.1 の purego バックエンドを使うため、Linux でも C コン�
 - Linux: GTK4 / WebKitGTK 6.0
   - 古い環境では `-tags purego,gtk3,production` と GTK3 / WebKit2GTK 4.1
 
+### デスクトップ版の機能
+
+- ネイティブの出力フォルダ選択ダイアログ
+- 出力フォルダ / ZIP を開くボタン
+- アプリケーションメニュー
+- システムトレイ（ウィンドウ表示、出力フォルダ、更新確認、終了）
+- GitHub Releases を使った自動アップデート
+- Windows インストーラ（NSIS）
+- yt-dlp / ffmpeg / ffprobe の同梱
+
 ### バイナリを同梱したデスクトップ配布
 
 ```bash
@@ -300,12 +322,44 @@ dist/ytm-playlist-dl-<version>-linux-amd64/
 ├── ytm-playlist-dl-desktop
 ├── bin/
 ├── LICENSE
-└── LICENSES/
+├── LICENSES/
+└── ...
 ```
 
-macOS の `.app` 化・公証、Windows のインストーラ作成は別途必要です。
-現時点のデスクトップ版は、既存 UI をネイティブウィンドウで表示する
-シェル実装です。メニューやネイティブのフォルダ選択は今後の拡張対象です。
+### Windows インストーラ
+
+```bash
+scripts/build-windows-installer.sh \
+  --bundle dist/ytm-playlist-dl-windows-amd64 \
+  --version 0.5.0 \
+  --out dist/ytm-playlist-dl-0.5.0-windows-amd64-setup.exe
+```
+
+NSIS の `makensis` が必要です。インストーラはユーザー領域
+（`%LOCALAPPDATA%\Programs\ytm-playlist-dl`）にインストールし、
+デスクトップとスタートメニューにショートカットを作成します。
+
+### 自動アップデート
+
+更新は GitHub Releases から取得します。
+
+- メニュー / トレイの「更新を確認...」
+- 起動後15秒でバックグラウンド確認
+- `SHA256SUMS` によるダイジェスト検証
+- Linux / Windows のデスクトップ版を更新対象にする（macOSは対象外）
+
+リリースには以下の「裸の」デスクトップバイナリが必要です。
+
+```text
+ytm-playlist-dl-desktop-linux-amd64
+ytm-playlist-dl-desktop-linux-arm64
+ytm-playlist-dl-desktop-windows-amd64.exe
+SHA256SUMS
+```
+
+`Build and release` GitHub Actions ワークフローが、タグ `v*` の push 時に
+バンドル・Windowsインストーラ・更新用バイナリ・チェックサムを生成し、
+GitHub Release を作成します。
 
 ## 設定ファイル
 
@@ -345,7 +399,9 @@ GitHub Actions で Go 1.22 / 1.23 のテスト、race test、vet、gofmt、
 ## 構成
 
 ```text
-cmd/                      CLI / Web のエントリポイント
+cmd/                      CLI / Web / デスクトップ版のエントリポイント
+internal/archive/         ZIP 作成
+internal/binmgr/          yt-dlp / ffmpeg / ffprobe の探索
 internal/cli/             引数解析・対話モード
 internal/config/          JSON 設定
 internal/downloader/      yt-dlp 連携・並列ダウンロード
@@ -353,8 +409,10 @@ internal/ytdlp/           yt-dlp サブプロセス・進捗解析
 internal/normalizer/      EBU R128 / ReplayGain
 internal/manifest/        正規化済み記録
 internal/report/          JSON レポート・ログ
-internal/service/         CLI / Web 共通処理
+internal/service/         CLI / Web / デスクトップ共通処理
 internal/webui/           HTTP API・ジョブ管理
+packaging/windows/        NSIS インストーラ
+scripts/                  バンドル・インストーラ生成
 web/static/               ブラウザ UI
 ```
 

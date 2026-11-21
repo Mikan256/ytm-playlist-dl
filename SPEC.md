@@ -37,7 +37,10 @@ ytm-playlist-dl/
 │   ├── urlutil/               # URL 正規化・ファイル名サニタイズ
 │   └── webui/                 # HTTP API・ジョブ管理
 ├── scripts/
-│   └── build-bundle.sh        # 同梱配布アーカイブの生成
+│   ├── build-bundle.sh        # 同梱配布アーカイブの生成
+│   └── build-windows-installer.sh # NSIS インストーラの生成
+├── packaging/
+│   └── windows/installer.nsi  # Windows インストーラ定義
 ├── web/
 │   ├── embed.go               # 静的ファイルの埋め込み
 │   └── static/                # HTML / CSS / JavaScript
@@ -150,7 +153,7 @@ ytm-playlist-dl/
   4. 実行ファイル隣の `bin/`
   5. カレントディレクトリ / `./bin/`
   6. `PATH`
-- GitHub Actions の `Build portable bundles` ワークフローで生成可能
+- GitHub Actions の `Build and release` ワークフローで生成可能
 - 同梱する ffmpeg のライセンスに応じて `LICENSES/` と
   `THIRD_PARTY_NOTICES.md` を同梱する
 
@@ -169,7 +172,24 @@ ytm-playlist-dl/
 - `CGO_ENABLED=0 go build -tags purego,production`
 - Windows: WebView2、macOS: WKWebView、Linux: GTK4 / WebKitGTK 6.0
 - Linux 旧環境向け: `-tags purego,gtk3,production`（GTK3 / WebKit2GTK 4.1）
+- 出力フォルダ選択ダイアログ
+- 出力フォルダ / ZIP を開く
+- アプリケーションメニュー / システムトレイ
+- GitHub Releases による自動アップデート
+- Windows NSIS インストーラ
+- macOS は今回の配布・自動更新・インストーラ対象外
 - `scripts/build-bundle.sh --desktop` で yt-dlp / ffmpeg 同梱可能
+
+### 18. リリース
+- `.github/workflows/release.yml`
+- タグ `v*` の push で Linux / Windows のバンドルを生成
+- Windows インストーラ、更新用の裸バイナリ、`SHA256SUMS` を生成
+- GitHub Release を自動作成
+- 更新用アセット:
+  - `ytm-playlist-dl-desktop-linux-amd64`
+  - `ytm-playlist-dl-desktop-linux-arm64`
+  - `ytm-playlist-dl-desktop-windows-amd64.exe`
+  - `SHA256SUMS`
 
 ## CLI
 
@@ -214,6 +234,15 @@ URL 省略時は対話モード。`--web` 指定時は Web UI を起動する。
 | GET | `/api/jobs/<id>/report` | JSON レポート |
 | GET | `/api/jobs/<id>/archive` | ZIP アーカイブ |
 | GET | `/health` | ヘルスチェック |
+
+デスクトップ版のみ:
+
+| メソッド | パス | 内容 |
+| --- | --- | --- |
+| GET | `/api/desktop/info` | デスクトップ判定・バージョン |
+| POST | `/api/desktop/choose-directory` | 出力フォルダ選択 |
+| POST | `/api/desktop/open` | フォルダ / ファイルを開く |
+| POST | `/api/desktop/update` | 更新確認 |
 
 ## 処理フロー
 
@@ -282,7 +311,7 @@ go vet ./...
 - godbus/dbus: BSD-2-Clause
 - go-ole: MIT
 - coder/websocket: ISC
-- golang.org/x/sys, x/term: BSD-3-Clause
+- golang.org/x/sys, x/term, x/mod: BSD-3-Clause
 - github.com/spf13/pflag: BSD-3-Clause
   （`LICENSES/pflag-BSD-3-Clause.txt`）
 

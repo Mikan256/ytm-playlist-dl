@@ -17,6 +17,8 @@
     </div>
     <div class="topbar-right">
       <span class="stamp">LOCAL ONLY</span>
+      <span id="desktop-badge" class="stamp hidden">DESKTOP</span>
+      <button type="button" id="update-button" class="ghost small hidden">更新を確認</button>
       <span id="server-status" class="badge idle">待機中</span>
     </div>
   </header>
@@ -66,7 +68,10 @@
 
         <div class="field">
           <label for="output">出力先ディレクトリ</label>
-          <input id="output" name="output" type="text" value="./downloads">
+          <div class="input-row">
+            <input id="output" name="output" type="text" value="./downloads">
+            <button type="button" id="browse-output" class="secondary hidden">参照…</button>
+          </div>
         </div>
 
         <details class="advanced">

@@ -8,6 +8,8 @@
     pollTimer: null,
     info: null,
     busy: false,
+    desktop: false,
+    desktopInfo: null,
   };
 
   const STATUS = {
@@ -109,6 +111,61 @@
     } catch (error) {
       setServerBadge("接続エラー", "error");
       toast(`設定の読み込みに失敗しました: ${error.message}`, true);
+    }
+  }
+
+  async function checkDesktop() {
+    try {
+      const data = await api("/api/desktop/info");
+      state.desktop = Boolean(data.desktop);
+      state.desktopInfo = data;
+      $("desktop-badge").classList.toggle("hidden", !state.desktop);
+      $("browse-output").classList.toggle("hidden", !state.desktop);
+      $("update-button").classList.toggle(
+        "hidden", !state.desktop || !data.updater_ready
+      );
+    } catch (_) {
+      state.desktop = false;
+    }
+  }
+
+  async function browseOutput() {
+    if (!state.desktop) {
+      toast("フォルダ選択はデスクトップ版でのみ利用できます", true);
+      return;
+    }
+    try {
+      const data = await api("/api/desktop/choose-directory", {
+        method: "POST",
+        body: JSON.stringify({ current: $("output").value.trim() }),
+      });
+      if (data.path) {
+        $("output").value = data.path;
+      }
+    } catch (error) {
+      toast(`フォルダ選択に失敗しました: ${error.message}`, true);
+    }
+  }
+
+  async function openDesktopPath(path, reveal = false) {
+    if (!state.desktop || !path) return;
+    try {
+      await api("/api/desktop/open", {
+        method: "POST",
+        body: JSON.stringify({ path, reveal }),
+      });
+    } catch (error) {
+      toast(`開けませんでした: ${error.message}`, true);
+    }
+  }
+
+  async function checkForUpdates() {
+    if (!state.desktop) return;
+    try {
+      await api("/api/desktop/update", { method: "POST", body: "{}" });
+      toast("更新を確認しています...");
+    } catch (error) {
+      toast(`更新確認に失敗しました: ${error.message}`, true);
     }
   }
 
@@ -308,6 +365,15 @@
     return row;
   }
 
+  function smallButton(label, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost small";
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
   function renderSummary(job) {
     const box = $("summary");
     const result = job.result;
@@ -328,12 +394,28 @@
       "タイトル", result.info?.title || state.info?.title || "-"
     ));
     box.append(summaryRow("出力先", result.output_dir || "-"));
+    if (state.desktop && result.output_dir) {
+      box.append(summaryRow(
+        "フォルダ",
+        smallButton("出力フォルダを開く", () => {
+          openDesktopPath(result.output_dir, false);
+        })
+      ));
+    }
     box.append(summaryRow("保存曲数", String((result.files || []).length)));
     if (result.archive_path) {
       const archive = document.createElement("a");
       archive.href = `/api/jobs/${state.jobId}/archive`;
       archive.textContent = "ZIPをダウンロード";
-      box.append(summaryRow("アーカイブ", archive));
+      const archiveWrap = document.createElement("span");
+      archiveWrap.append(archive);
+      if (state.desktop) {
+        archiveWrap.append(" ");
+        archiveWrap.append(smallButton("ZIPを開く", () => {
+          openDesktopPath(result.archive_path, true);
+        }));
+      }
+      box.append(summaryRow("アーカイブ", archiveWrap));
     }
 
     if (result.planned && result.planned.length) {
@@ -433,6 +515,8 @@
     $("info-button").addEventListener("click", fetchInfo);
     $("dry-run-button").addEventListener("click", () => startJob(true));
     $("save-config-button").addEventListener("click", saveConfig);
+    $("browse-output").addEventListener("click", browseOutput);
+    $("update-button").addEventListener("click", checkForUpdates);
     $("clear-log").addEventListener("click", () => $("log").replaceChildren());
     $("url").addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
@@ -447,8 +531,9 @@
     });
   }
 
-  window.addEventListener("DOMContentLoaded", () => {
+  window.addEventListener("DOMContentLoaded", async () => {
     bind();
-    loadConfig();
+    await loadConfig();
+    await checkDesktop();
   });
 })();

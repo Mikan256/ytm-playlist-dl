@@ -17,6 +17,7 @@ software that can be bundled into a portable release.
 | `coder-websocket-ISC.txt` | coder/websocket | ISC |
 | `x-sys-BSD-3-Clause.txt` | golang.org/x/sys | BSD-3-Clause |
 | `x-term-BSD-3-Clause.txt` | golang.org/x/term | BSD-3-Clause |
+| `x-mod-BSD-3-Clause.txt` | golang.org/x/mod | BSD-3-Clause |
 | `pflag-BSD-3-Clause.txt` | github.com/spf13/pflag | BSD-3-Clause |
 
 ## FFmpeg

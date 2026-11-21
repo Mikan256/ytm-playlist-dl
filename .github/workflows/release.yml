@@ -1,4 +1,4 @@
-name: Build portable bundles
+name: Build and release
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   bundle:
@@ -20,17 +20,13 @@ jobs:
             arch: amd64
           - os: linux
             arch: arm64
-          - os: darwin
-            arch: amd64
-          - os: darwin
-            arch: arm64
           - os: windows
             arch: amd64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.x"
+          go-version: "1.27.x"
           cache: true
       - name: Prepare version
         id: version
@@ -39,18 +35,64 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "value=0.4.1" >> "$GITHUB_OUTPUT"
+            echo "value=0.5.0" >> "$GITHUB_OUTPUT"
           fi
-      - name: Build bundled release
+      - name: Install NSIS
+        if: matrix.os == 'windows'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis
+      - name: Build portable bundle
         run: |
           scripts/build-bundle.sh \
             --os "${{ matrix.os }}" \
             --arch "${{ matrix.arch }}" \
             --version "${{ steps.version.outputs.value }}" \
             --desktop
-      - name: Upload archive
+      - name: Build Windows installer
+        if: matrix.os == 'windows'
+        run: |
+          scripts/build-windows-installer.sh \
+            --bundle "dist/ytm-playlist-dl-${{ matrix.os }}-${{ matrix.arch }}" \
+            --version "${{ steps.version.outputs.value }}" \
+            --out "dist/ytm-playlist-dl-${{ steps.version.outputs.value }}-${{ matrix.os }}-${{ matrix.arch }}-setup.exe"
+      - name: Prepare update assets
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          suffix=""
+          if [[ "${{ matrix.os }}" == "windows" ]]; then suffix=".exe"; fi
+          cp "dist/ytm-playlist-dl-${{ matrix.os }}-${{ matrix.arch }}/ytm-playlist-dl-desktop${suffix}" \
+             "release-assets/ytm-playlist-dl-desktop-${{ matrix.os }}-${{ matrix.arch }}${suffix}"
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ytm-playlist-dl-${{ matrix.os }}-${{ matrix.arch }}
-          path: dist/*
+          name: release-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            release-assets/*
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*-setup.exe
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release
+      - name: Create checksums
+        run: |
+          cd release
+          sha256sum ytm-playlist-dl-desktop-* > SHA256SUMS
+          cat SHA256SUMS
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
