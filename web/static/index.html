@@ -9,13 +9,16 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">♪</span>
+      <span class="logo" aria-hidden="true">♫</span>
       <div>
         <h1>ytm-playlist-dl</h1>
-        <p>YouTube Music プレイリストを連番保存・音量統一</p>
+        <p>PLAYLIST ARCHIVE · 連番保存と音量統一</p>
       </div>
     </div>
-    <span id="server-status" class="badge idle">待機中</span>
+    <div class="topbar-right">
+      <span class="stamp">LOCAL ONLY</span>
+      <span id="server-status" class="badge idle">待機中</span>
+    </div>
   </header>
 
   <main class="layout">
@@ -49,12 +52,6 @@
           </div>
         </div>
 
-        <div class="field">
-          <label for="template_string">カスタムテンプレート <small>（任意・yt-dlp形式）</small></label>
-          <input id="template_string" name="template_string" type="text"
-                 placeholder="%(playlist_index)02d_%(artist)s_%(title)s.%(ext)s">
-        </div>
-
         <div class="grid-2">
           <div class="field">
             <label for="normalize_mode">音量処理</label>
@@ -72,49 +69,59 @@
           <input id="output" name="output" type="text" value="./downloads">
         </div>
 
-        <div class="grid-3">
-          <div class="field">
-            <label for="start">開始曲</label>
-            <input id="start" name="start" type="number" min="1" placeholder="1">
-          </div>
-          <div class="field">
-            <label for="end">終了曲</label>
-            <input id="end" name="end" type="number" min="1" placeholder="最後">
-          </div>
-          <div class="field">
-            <label for="audio_quality">MP3品質 <small>kbps</small></label>
-            <input id="audio_quality" name="audio_quality" type="text"
-                   placeholder="192 / 320">
-          </div>
-        </div>
+        <details class="advanced">
+          <summary>詳細設定</summary>
 
-        <div class="grid-3">
           <div class="field">
-            <label for="jobs">並列トラック数</label>
-            <input id="jobs" name="jobs" type="number" min="1" max="8" value="1">
+            <label for="template_string">カスタムテンプレート <small>（任意・yt-dlp形式）</small></label>
+            <input id="template_string" name="template_string" type="text"
+                   placeholder="%(playlist_index)02d_%(artist)s_%(title)s.%(ext)s">
           </div>
-          <div class="field">
-            <label for="normalize_jobs">並列正規化数</label>
-            <input id="normalize_jobs" name="normalize_jobs"
-                   type="number" min="1" max="8" value="1">
-          </div>
-          <div class="field">
-            <label for="concurrent_fragments">並列フラグメント</label>
-            <input id="concurrent_fragments" name="concurrent_fragments"
-                   type="number" min="1" max="16" value="1">
-          </div>
-        </div>
 
-        <fieldset class="checks">
-          <label><input id="keep_going" name="keep_going" type="checkbox">
-            失敗した曲を飛ばして続行</label>
-          <label><input id="force_normalize" name="force_normalize" type="checkbox">
-            正規化済みでも再実行</label>
-          <label><input id="embed_metadata" name="embed_metadata" type="checkbox">
-            メタデータを埋め込む</label>
-          <label><input id="embed_thumbnail" name="embed_thumbnail" type="checkbox">
-            カバーアートを埋め込む</label>
-        </fieldset>
+          <div class="grid-3">
+            <div class="field">
+              <label for="start">開始曲</label>
+              <input id="start" name="start" type="number" min="1" placeholder="1">
+            </div>
+            <div class="field">
+              <label for="end">終了曲</label>
+              <input id="end" name="end" type="number" min="1" placeholder="最後">
+            </div>
+            <div class="field">
+              <label for="audio_quality">MP3品質 <small>kbps</small></label>
+              <input id="audio_quality" name="audio_quality" type="text"
+                     placeholder="192 / 320">
+            </div>
+          </div>
+
+          <div class="grid-3">
+            <div class="field">
+              <label for="jobs">並列トラック数</label>
+              <input id="jobs" name="jobs" type="number" min="1" max="8" value="1">
+            </div>
+            <div class="field">
+              <label for="normalize_jobs">並列正規化数</label>
+              <input id="normalize_jobs" name="normalize_jobs"
+                     type="number" min="1" max="8" value="1">
+            </div>
+            <div class="field">
+              <label for="concurrent_fragments">並列フラグメント</label>
+              <input id="concurrent_fragments" name="concurrent_fragments"
+                     type="number" min="1" max="16" value="1">
+            </div>
+          </div>
+
+          <fieldset class="checks">
+            <label><input id="keep_going" name="keep_going" type="checkbox">
+              失敗した曲を飛ばして続行</label>
+            <label><input id="force_normalize" name="force_normalize" type="checkbox">
+              正規化済みでも再実行</label>
+            <label><input id="embed_metadata" name="embed_metadata" type="checkbox">
+              メタデータを埋め込む</label>
+            <label><input id="embed_thumbnail" name="embed_thumbnail" type="checkbox">
+              カバーアートを埋め込む</label>
+          </fieldset>
+        </details>
 
         <div class="actions">
           <button type="submit" id="start-button" class="primary">ダウンロード開始</button>
