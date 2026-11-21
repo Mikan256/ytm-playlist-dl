@@ -48,8 +48,13 @@ type rawEntry struct {
 }
 
 type rawPlaylist struct {
-	Title   string      `json:"title"`
-	Entries []*rawEntry `json:"entries"`
+	Type       string      `json:"_type"`
+	ID         string      `json:"id"`
+	Title      string      `json:"title"`
+	URL        string      `json:"url"`
+	WebpageURL string      `json:"webpage_url"`
+	Duration   float64     `json:"duration"`
+	Entries    []*rawEntry `json:"entries"`
 }
 
 func (c *Client) Info(ctx context.Context, rawURL string) (model.PlaylistInfo, error) {
@@ -85,37 +90,52 @@ func (c *Client) Info(ctx context.Context, rawURL string) (model.PlaylistInfo, e
 		)
 	}
 	info := model.PlaylistInfo{
-		Title: urlutil.Sanitize(parsed.Title),
-		URL:   normalized,
+		Title:      urlutil.Sanitize(parsed.Title),
+		URL:        normalized,
+		IsPlaylist: parsed.Type == "playlist" || len(parsed.Entries) > 0,
 	}
-	for _, entry := range parsed.Entries {
-		if entry == nil {
-			continue
-		}
-		index := entry.PlaylistIndex
-		if index <= 0 {
-			index = len(info.Entries) + 1
-		}
-		entryURL := entry.URL
-		if !strings.HasPrefix(entryURL, "http") {
-			videoID := entryURL
-			if videoID == "" {
-				videoID = entry.ID
+	if info.IsPlaylist {
+		for _, entry := range parsed.Entries {
+			if entry == nil {
+				continue
 			}
-			if videoID != "" {
-				entryURL = "https://www.youtube.com/watch?v=" + videoID
+			index := entry.PlaylistIndex
+			if index <= 0 {
+				index = len(info.Entries) + 1
 			}
+			entryURL := entry.URL
+			if !strings.HasPrefix(entryURL, "http") {
+				videoID := entryURL
+				if videoID == "" {
+					videoID = entry.ID
+				}
+				if videoID != "" {
+					entryURL = "https://www.youtube.com/watch?v=" + videoID
+				}
+			}
+			if entryURL == "" {
+				entryURL = entry.WebpageURL
+			}
+			info.Entries = append(info.Entries, model.Entry{
+				Index:    index,
+				ID:       entry.ID,
+				Title:    urlutil.Sanitize(entry.Title),
+				URL:      entryURL,
+				Duration: entry.Duration,
+			})
 		}
+	} else if parsed.ID != "" {
+		entryURL := parsed.WebpageURL
 		if entryURL == "" {
-			entryURL = entry.WebpageURL
+			entryURL = "https://www.youtube.com/watch?v=" + parsed.ID
 		}
-		info.Entries = append(info.Entries, model.Entry{
-			Index:    index,
-			ID:       entry.ID,
-			Title:    urlutil.Sanitize(entry.Title),
+		info.Entries = []model.Entry{{
+			Index:    1,
+			ID:       parsed.ID,
+			Title:    urlutil.Sanitize(parsed.Title),
 			URL:      entryURL,
-			Duration: entry.Duration,
-		})
+			Duration: parsed.Duration,
+		}}
 	}
 	info.Total = len(info.Entries)
 	return info, nil

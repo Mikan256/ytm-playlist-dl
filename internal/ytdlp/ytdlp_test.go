@@ -31,14 +31,18 @@ JSON
 esac
 `
 
-func fakeClient(t *testing.T) *Client {
+func fakeClientWithScript(t *testing.T, script string) *Client {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script fixture")
 	}
 	dir := t.TempDir()
-	path := testutil.WriteExecutable(t, dir, "yt-dlp", fakeScript)
+	path := testutil.WriteExecutable(t, dir, "yt-dlp", script)
 	return &Client{Binary: path}
+}
+
+func fakeClient(t *testing.T) *Client {
+	return fakeClientWithScript(t, fakeScript)
 }
 
 func TestInfo(t *testing.T) {
@@ -54,11 +58,36 @@ func TestInfo(t *testing.T) {
 	if info.URL != "https://youtube.com/playlist?list=PL1" {
 		t.Fatalf("url = %q", info.URL)
 	}
+	if !info.IsPlaylist {
+		t.Fatal("expected a playlist")
+	}
 	if info.Entries[0].Index != 1 || info.Entries[0].URL != "https://www.youtube.com/watch?v=abc" {
 		t.Fatalf("entry 0 = %+v", info.Entries[0])
 	}
 	if info.Entries[1].Index != 5 {
 		t.Fatalf("entry 1 = %+v", info.Entries[1])
+	}
+}
+
+func TestInfoSingleVideo(t *testing.T) {
+	client := fakeClientWithScript(t, `#!/bin/sh
+cat <<'JSON'
+{"_type":"video","id":"abc","title":"Single: Video","duration":42,"webpage_url":"https://youtube.com/watch?v=abc"}
+JSON
+`)
+	info, err := client.Info(context.Background(),
+		"https://www.youtube.com/watch?v=abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.IsPlaylist || info.Total != 1 {
+		t.Fatalf("info = %+v", info)
+	}
+	if info.Title != "Single Video" || info.Entries[0].ID != "abc" {
+		t.Fatalf("info = %+v", info)
+	}
+	if info.Entries[0].Index != 1 || info.Entries[0].Duration != 42 {
+		t.Fatalf("entry = %+v", info.Entries[0])
 	}
 }
 

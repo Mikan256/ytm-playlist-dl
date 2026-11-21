@@ -29,6 +29,7 @@ type Options struct {
 	Jobs                int     `json:"jobs"`
 	NormalizeJobs       int     `json:"normalize_jobs"`
 	ConcurrentFragments int     `json:"concurrent_fragments"`
+	Zip                 bool    `json:"zip"`
 	DryRun              bool    `json:"dry_run"`
 	ListTracks          bool    `json:"list_tracks"`
 	LogFile             string  `json:"log_file,omitempty"`
@@ -59,6 +60,7 @@ func OptionsFromConfig(cfg config.Config, url string) Options {
 		Jobs:                cfg.Jobs,
 		NormalizeJobs:       cfg.NormalizeJobs,
 		ConcurrentFragments: cfg.ConcurrentFragments,
+		Zip:                 cfg.Zip,
 	}
 }
 
@@ -78,6 +80,7 @@ func (o Options) Config() config.Config {
 		Jobs:                o.Jobs,
 		NormalizeJobs:       o.NormalizeJobs,
 		ConcurrentFragments: o.ConcurrentFragments,
+		Zip:                 o.Zip,
 	}
 }
 

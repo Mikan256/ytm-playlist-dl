@@ -17,6 +17,7 @@ func TestParseFlagsAroundURL(t *testing.T) {
 		"--end", "5",
 		"--keep-going",
 		"--jobs", "3",
+		"--zip",
 		"--no-normalize",
 	}, cfg, "")
 	if err != nil {
@@ -33,6 +34,9 @@ func TestParseFlagsAroundURL(t *testing.T) {
 	}
 	if !parsed.keepGoing || parsed.jobs != 3 {
 		t.Fatalf("parsed = %+v", parsed)
+	}
+	if !parsed.zip {
+		t.Fatalf("zip not set: %+v", parsed)
 	}
 	if parsed.normalizeMode != "off" {
 		t.Fatalf("normalize mode = %q", parsed.normalizeMode)

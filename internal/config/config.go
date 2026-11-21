@@ -69,6 +69,7 @@ type Config struct {
 	Jobs                int     `json:"jobs"`
 	NormalizeJobs       int     `json:"normalize_jobs"`
 	ConcurrentFragments int     `json:"concurrent_fragments"`
+	Zip                 bool    `json:"zip"`
 }
 
 func Default() Config {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -370,6 +371,22 @@ func (h *Handler) job(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": true, "report": result.Report,
 		})
+		return
+	}
+	if len(parts) >= 4 && parts[3] == "archive" {
+		job.mu.Lock()
+		result := job.Result
+		job.mu.Unlock()
+		if result == nil || result.ArchivePath == "" {
+			writeError(w, http.StatusNotFound, "archive not ready")
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set(
+			"Content-Disposition",
+			fmt.Sprintf("attachment; filename=%q", filepath.Base(result.ArchivePath)),
+		)
+		http.ServeFile(w, r, result.ArchivePath)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job.snapshot()})

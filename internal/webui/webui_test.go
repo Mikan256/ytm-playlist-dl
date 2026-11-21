@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -193,6 +195,66 @@ func TestUnknownJob(t *testing.T) {
 		server.URL+"/api/jobs/nope", nil)
 	if status != http.StatusNotFound || data["ok"] != false {
 		t.Fatalf("status=%d data=%+v", status, data)
+	}
+}
+
+func TestArchiveEndpoint(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "output.zip")
+	if err := os.WriteFile(archivePath, []byte("PK\x03\x04test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := func(ctx context.Context, options model.Options,
+		info *model.PlaylistInfo, progress func(model.Event)) (model.RunResult, error) {
+		return model.RunResult{
+			Options:     options,
+			Info:        model.PlaylistInfo{Title: "P", Total: 1},
+			OutputDir:   "/tmp/out",
+			Files:       []string{"/tmp/out/01_A.flac"},
+			ArchivePath: archivePath,
+			Report:      map[string]any{"exit_code": 0},
+		}, nil
+	}
+	server := testHandler(t, runner)
+	defer server.Close()
+
+	status, data := requestJSON(t, server.Client(), http.MethodPost,
+		server.URL+"/api/jobs", map[string]any{
+			"url":            "https://youtube.com/playlist?list=PL1",
+			"fmt":            "original",
+			"normalize_mode": "off",
+			"output":         "/tmp/out",
+		})
+	if status != http.StatusAccepted {
+		t.Fatalf("start job = %d %+v", status, data)
+	}
+	jobID := data["job"].(map[string]any)["id"].(string)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		_, current := requestJSON(t, server.Client(), http.MethodGet,
+			server.URL+"/api/jobs/"+jobID, nil)
+		job := current["job"].(map[string]any)
+		if job["status"] == "done" || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	response, err := server.Client().Get(
+		server.URL + "/api/jobs/" + jobID + "/archive",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	raw, _ := io.ReadAll(response.Body)
+	if response.StatusCode != 200 {
+		t.Fatalf("archive status = %d", response.StatusCode)
+	}
+	if response.Header.Get("Content-Type") != "application/zip" {
+		t.Fatalf("content type = %q", response.Header.Get("Content-Type"))
+	}
+	if len(raw) == 0 {
+		t.Fatal("archive is empty")
 	}
 }
 

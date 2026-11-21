@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Mikan256/ytm-playlist-dl/internal/archive"
 	"github.com/Mikan256/ytm-playlist-dl/internal/downloader"
 	"github.com/Mikan256/ytm-playlist-dl/internal/model"
 	"github.com/Mikan256/ytm-playlist-dl/internal/normalizer"
@@ -121,6 +122,18 @@ func (Service) Execute(ctx context.Context, options model.Options,
 
 	runReport := report.Build(options, *info, outputDir, &downloadResult,
 		normalization, nil)
+	if options.Zip && len(downloadResult.Files) > 0 {
+		archivePath := filepath.Join(
+			filepath.Dir(outputDir), info.Title+".zip",
+		)
+		created, err := archive.CreateZip(outputDir, archivePath)
+		if err != nil {
+			return finishWithError(options, *info, outputDir, &downloadResult,
+				normalization, err, progress, &result)
+		}
+		result.ArchivePath = created
+		runReport.ArchivePath = created
+	}
 	result.Report = reportMap(runReport)
 	result.ExitCode = runReport.ExitCode
 	if options.ReportFile != "" {

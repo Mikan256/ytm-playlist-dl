@@ -11,10 +11,11 @@ type Entry struct {
 
 // PlaylistInfo is the result of extracting a playlist.
 type PlaylistInfo struct {
-	Title   string  `json:"title"`
-	Total   int     `json:"total"`
-	URL     string  `json:"url"`
-	Entries []Entry `json:"entries"`
+	Title      string  `json:"title"`
+	Total      int     `json:"total"`
+	URL        string  `json:"url"`
+	IsPlaylist bool    `json:"is_playlist"`
+	Entries    []Entry `json:"entries"`
 }
 
 // DownloadResult describes files produced by a download run.
@@ -101,6 +102,7 @@ type RunResult struct {
 	Normalization *NormalizationResult `json:"normalization"`
 	Report        map[string]any       `json:"report"`
 	ReportPath    string               `json:"report_path,omitempty"`
+	ArchivePath   string               `json:"archive_path,omitempty"`
 	Planned       []string             `json:"planned,omitempty"`
 	ExitCode      int                  `json:"exit_code"`
 }

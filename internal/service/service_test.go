@@ -135,6 +135,56 @@ func TestDownloadAndNormalize(t *testing.T) {
 	}
 }
 
+func TestSingleVideoWithZip(t *testing.T) {
+	_, ffmpeg := fakePaths(t)
+	dir := t.TempDir()
+	ytdlp := testutil.WriteExecutable(t, dir, "single-yt-dlp", `#!/bin/sh
+case "$*" in
+  *--dump-single-json*)
+    echo '{"_type":"video","id":"a","title":"Single Song","duration":42,"webpage_url":"https://youtube.com/watch?v=a"}'
+    ;;
+  *)
+    out=""
+    previous=""
+    for argument in "$@"; do
+      if [ "$previous" = "-o" ]; then out="$argument"; fi
+      previous="$argument"
+    done
+    dir=$(dirname "$out")
+    mkdir -p "$dir"
+    : > "$dir/01_Single Song.flac"
+    ;;
+esac
+exit 0
+`)
+	options := model.DefaultOptions("https://youtube.com/watch?v=a")
+	options.Output = t.TempDir()
+	options.YtDlpPath = ytdlp
+	options.FFmpegPath = ffmpeg
+	options.Format = "original"
+	options.NormalizeMode = "off"
+	options.Zip = true
+	result, err := (Service{}).Execute(context.Background(), options, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Info.IsPlaylist || result.Info.Total != 1 {
+		t.Fatalf("info = %+v", result.Info)
+	}
+	if len(result.Files) != 1 {
+		t.Fatalf("files = %v", result.Files)
+	}
+	if result.ArchivePath == "" {
+		t.Fatal("archive path is empty")
+	}
+	if _, err := os.Stat(result.ArchivePath); err != nil {
+		t.Fatal(err)
+	}
+	if result.Report["archive_path"] != result.ArchivePath {
+		t.Fatalf("report = %+v", result.Report)
+	}
+}
+
 func TestPartialFailureExitCode(t *testing.T) {
 	_, ffmpeg := fakePaths(t)
 	dir := t.TempDir()

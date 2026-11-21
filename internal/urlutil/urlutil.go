@@ -23,11 +23,12 @@ func Sanitize(name string) string {
 	return cleaned
 }
 
-// Normalize playlist URLs to a canonical youtube.com URL.
+// Normalize converts playlist, video, Shorts and youtu.be URLs to a canonical
+// youtube.com URL. Extra tracking parameters are discarded.
 func Normalize(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", errors.New("playlist URL is required")
+		return "", errors.New("YouTube URL is required")
 	}
 	if !strings.Contains(raw, "://") {
 		raw = "https://" + raw
@@ -37,33 +38,50 @@ func Normalize(raw string) (string, error) {
 		return "", fmt.Errorf("invalid URL: %w", err)
 	}
 	host := strings.ToLower(parsed.Hostname())
-	var videoID string
 	switch host {
 	case "music.youtube.com", "m.youtube.com", "www.youtube.com":
 		host = "youtube.com"
 	case "youtu.be":
-		videoID = strings.Trim(parsed.Path, "/")
 		host = "youtube.com"
 	case "youtube.com":
 		// Keep as is.
 	default:
-		return "", fmt.Errorf("unsupported playlist URL host: %s", parsed.Hostname())
+		return "", fmt.Errorf("unsupported YouTube URL host: %s", parsed.Hostname())
 	}
+
 	query := parsed.Query()
 	list := strings.TrimSpace(query.Get("list"))
-	if list == "" {
-		return "", errors.New("URL must contain a playlist id ('list' parameter)")
-	}
-	values := url.Values{}
-	values.Set("list", list)
-	if videoID == "" && strings.TrimRight(parsed.Path, "/") == "/watch" {
+	videoID := ""
+	if strings.EqualFold(parsed.Hostname(), "youtu.be") {
+		videoID = strings.Trim(parsed.Path, "/")
+	} else if strings.TrimRight(parsed.Path, "/") == "/watch" {
 		videoID = strings.TrimSpace(query.Get("v"))
+	} else {
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) == 2 {
+			switch parts[0] {
+			case "shorts", "live", "embed":
+				videoID = parts[1]
+			}
+		}
 	}
-	path := parsed.Path
+
+	if list == "" && videoID == "" {
+		return "", errors.New("URL must contain a video id or playlist id")
+	}
+
+	values := url.Values{}
+	if list != "" {
+		values.Set("list", list)
+	}
 	if videoID != "" {
 		values.Set("v", videoID)
+	}
+
+	path := parsed.Path
+	if videoID != "" {
 		path = "/watch"
-	} else if path == "" || path == "/" {
+	} else {
 		path = "/playlist"
 	}
 	result := url.URL{

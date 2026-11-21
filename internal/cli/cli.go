@@ -41,6 +41,7 @@ type parsedArgs struct {
 	audioQuality        string
 	embedMetadata       bool
 	embedThumbnail      bool
+	zip                 bool
 	jobs                int
 	normalizeJobs       int
 	concurrentFragments int
@@ -158,6 +159,7 @@ func parse(args []string, cfg config.Config, configPath string) (parsedArgs, err
 	flags.StringVar(&parsed.audioQuality, "audio-quality", optional(cfg.AudioQuality), "MP3 bitrate")
 	flags.BoolVar(&parsed.embedMetadata, "embed-metadata", cfg.EmbedMetadata, "embed metadata")
 	flags.BoolVar(&parsed.embedThumbnail, "embed-thumbnail", cfg.EmbedThumbnail, "embed cover art")
+	flags.BoolVar(&parsed.zip, "zip", cfg.Zip, "create a zip archive of the output")
 	flags.IntVar(&parsed.jobs, "jobs", cfg.Jobs, "parallel track downloads")
 	flags.IntVar(&parsed.normalizeJobs, "normalize-jobs", cfg.NormalizeJobs, "parallel normalisation workers")
 	flags.IntVar(&parsed.concurrentFragments, "concurrent-fragments", cfg.ConcurrentFragments, "parallel fragments per track")
@@ -220,6 +222,7 @@ func optionsFromArgs(parsed parsedArgs, cfg config.Config) model.Options {
 	options.AudioQuality = optionalPointer(parsed.audioQuality)
 	options.EmbedMetadata = parsed.embedMetadata
 	options.EmbedThumbnail = parsed.embedThumbnail
+	options.Zip = parsed.zip
 	options.Jobs = parsed.jobs
 	options.NormalizeJobs = parsed.normalizeJobs
 	options.ConcurrentFragments = parsed.concurrentFragments
@@ -296,7 +299,11 @@ func progressPrinter(suppressStatus bool) func(model.Event) {
 
 func printResult(result model.RunResult, parsed parsedArgs) {
 	if parsed.listTracks {
-		fmt.Printf("\nPlaylist: %s (%d tracks)\n", result.Info.Title, result.Info.Total)
+		kind := "Playlist"
+		if !result.Info.IsPlaylist {
+			kind = "Video"
+		}
+		fmt.Printf("\n%s: %s (%d tracks)\n", kind, result.Info.Title, result.Info.Total)
 		for _, entry := range result.Info.Entries {
 			duration := ""
 			if entry.Duration > 0 {
@@ -331,6 +338,9 @@ func printResult(result model.RunResult, parsed parsedArgs) {
 	}
 	fmt.Printf("\nDone! Saved to: %s\n", result.OutputDir)
 	fmt.Printf("Total: %d tracks\n", len(result.Files))
+	if result.ArchivePath != "" {
+		fmt.Printf("Archive: %s\n", result.ArchivePath)
+	}
 	if result.ReportPath != "" {
 		fmt.Printf("Report: %s\n", result.ReportPath)
 	}
@@ -361,7 +371,11 @@ func interactive(cfg config.Config) int {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
-	fmt.Printf("\nPlaylist: %s\nTracks:   %d\n\n", info.Title, info.Total)
+	kind := "Playlist"
+	if !info.IsPlaylist {
+		kind = "Video"
+	}
+	fmt.Printf("\n%s: %s\nTracks:   %d\n\n", kind, info.Title, info.Total)
 
 	fmt.Println("Output format:")
 	for _, key := range config.FormatChoices {

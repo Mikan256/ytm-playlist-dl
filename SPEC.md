@@ -21,6 +21,7 @@ ytm-playlist-dl/
 │   ├── ytm-playlist-dl/       # CLI エントリポイント
 │   └── ytm-playlist-dl-web/   # Web UI エントリポイント
 ├── internal/
+│   ├── archive/               # ZIP 作成
 │   ├── binmgr/                # yt-dlp / ffmpeg / ffprobe の探索
 │   ├── cli/                   # 引数解析・対話モード
 │   ├── config/                # JSON 設定
@@ -51,14 +52,16 @@ ytm-playlist-dl/
 
 ## 機能一覧
 
-### 1. プレイリストダウンロード
+### 1. プレイリスト・動画ダウンロード
 - yt-dlp で公開プレイリストを取得
-- 認証不要の公開プレイリストのみ対応
+- 単体動画、Shorts、youtu.be リンクにも対応
+- 認証不要の公開コンテンツのみ対応
 - 音声のみを抽出
-- `--start` / `--end` で範囲指定
+- `--start` / `--end` で範囲指定（プレイリスト時）
 
 ### 2. 連番ファイル名
 - `01_Title.flac` 形式
+- 単体動画は `01_` 固定
 - `num_title` / `num_artist_title`
 - `--template-string` による任意の yt-dlp テンプレート
 - 100曲以上も自然順で扱う
@@ -149,6 +152,14 @@ ytm-playlist-dl/
 - 同梱する ffmpeg のライセンスに応じて `LICENSES/` と
   `THIRD_PARTY_NOTICES.md` を同梱する
 
+### 16. ZIP出力
+- `--zip` で出力フォルダを ZIP にまとめる
+- ZIP は出力フォルダの親に `<タイトル>.zip` として作成
+- 元のフォルダは残す
+- レポートに `archive_path` を記録
+- Web UI では「ZIPにまとめる」で指定し、完了後にダウンロード可能
+- `GET /api/jobs/<id>/archive` で ZIP を取得
+
 ## CLI
 
 ```text
@@ -169,6 +180,7 @@ ytm-playlist-dl [options] [url]
 --jobs N / --normalize-jobs N / --concurrent-fragments N
 --dry-run / --list-tracks
 --report-file PATH / --log-file PATH / --json
+--zip
 --config PATH / --save-config
 --web / --host HOST / --port PORT / --open-browser
 --yt-dlp PATH / --ffmpeg PATH
@@ -189,6 +201,7 @@ URL 省略時は対話モード。`--web` 指定時は Web UI を起動する。
 | GET | `/api/jobs` | ジョブ一覧 |
 | GET | `/api/jobs/<id>` | ジョブ状態・進捗イベント |
 | GET | `/api/jobs/<id>/report` | JSON レポート |
+| GET | `/api/jobs/<id>/archive` | ZIP アーカイブ |
 | GET | `/health` | ヘルスチェック |
 
 ## 処理フロー

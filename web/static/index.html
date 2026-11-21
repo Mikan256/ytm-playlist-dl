@@ -25,10 +25,10 @@
     <section class="panel form-panel">
       <form id="download-form">
         <div class="field url-field">
-          <label for="url">プレイリストURL</label>
+          <label for="url">YouTube URL <small>（プレイリスト / 動画）</small></label>
           <div class="input-row">
             <input id="url" name="url" type="url" required
-                   placeholder="https://music.youtube.com/playlist?list=...">
+                   placeholder="https://music.youtube.com/playlist?list=... または watch?v=...">
             <button type="button" id="info-button" class="secondary">情報取得</button>
           </div>
         </div>
@@ -120,6 +120,8 @@
               メタデータを埋め込む</label>
             <label><input id="embed_thumbnail" name="embed_thumbnail" type="checkbox">
               カバーアートを埋め込む</label>
+            <label><input id="zip" name="zip" type="checkbox">
+              ZIPにまとめる</label>
           </fieldset>
         </details>
 

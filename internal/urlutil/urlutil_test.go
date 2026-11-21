@@ -23,6 +23,26 @@ func TestNormalize(t *testing.T) {
 			"https://youtu.be/abc?list=PL123",
 			"https://youtube.com/watch?list=PL123&v=abc",
 		},
+		{
+			"https://www.youtube.com/watch?v=abc",
+			"https://youtube.com/watch?v=abc",
+		},
+		{
+			"https://music.youtube.com/watch?v=abc",
+			"https://youtube.com/watch?v=abc",
+		},
+		{
+			"https://youtu.be/abc",
+			"https://youtube.com/watch?v=abc",
+		},
+		{
+			"https://youtube.com/shorts/abc",
+			"https://youtube.com/watch?v=abc",
+		},
+		{
+			"https://youtube.com/live/abc",
+			"https://youtube.com/watch?v=abc",
+		},
 	}
 	for _, tc := range cases {
 		got, err := Normalize(tc.input)
@@ -38,7 +58,8 @@ func TestNormalize(t *testing.T) {
 func TestNormalizeErrors(t *testing.T) {
 	for _, input := range []string{
 		"",
-		"https://youtube.com/watch?v=abc",
+		"https://youtube.com/",
+		"https://youtube.com/playlist?list=",
 		"https://example.com/playlist?list=PL1",
 	} {
 		if _, err := Normalize(input); err == nil {

@@ -20,6 +20,7 @@ func TestOptionsFromMap(t *testing.T) {
 		"embed_metadata":       true,
 		"embed_thumbnail":      false,
 		"force_normalize":      true,
+		"zip":                  true,
 		"concurrent_fragments": 4.0,
 	}, "")
 	if err != nil {
@@ -36,6 +37,9 @@ func TestOptionsFromMap(t *testing.T) {
 	}
 	if !options.KeepGoing || !options.ForceNormalize || !options.EmbedMetadata {
 		t.Fatalf("boolean options not set: %+v", options)
+	}
+	if !options.Zip {
+		t.Fatal("zip option not set")
 	}
 	if options.TemplateString != nil {
 		t.Fatalf("blank template_string should be nil")

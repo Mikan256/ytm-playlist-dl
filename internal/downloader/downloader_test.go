@@ -61,9 +61,10 @@ func fakeDownloaderClient(t *testing.T, script string) *Downloader {
 
 func testInfo() model.PlaylistInfo {
 	return model.PlaylistInfo{
-		Title: "Test Playlist",
-		Total: 2,
-		URL:   "https://youtube.com/playlist?list=PL1",
+		Title:      "Test Playlist",
+		Total:      2,
+		URL:        "https://youtube.com/playlist?list=PL1",
+		IsPlaylist: true,
 		Entries: []model.Entry{
 			{Index: 1, Title: "First Song", URL: "https://youtube.com/watch?v=a"},
 			{Index: 2, Title: "Second Song", URL: "https://youtube.com/watch?v=b"},
@@ -240,6 +241,32 @@ func TestDownloadParallel(t *testing.T) {
 	}
 	if len(result.Files) != 2 {
 		t.Fatalf("files = %v", result.Files)
+	}
+}
+
+func TestDownloadSingleVideo(t *testing.T) {
+	client := fakeDownloaderClient(t, fakeDownloader)
+	dir := t.TempDir()
+	info := model.PlaylistInfo{
+		Title:      "Single Video",
+		Total:      1,
+		URL:        "https://youtube.com/watch?v=a",
+		IsPlaylist: false,
+		Entries: []model.Entry{
+			{Index: 1, Title: "First Song", URL: "https://youtube.com/watch?v=a"},
+		},
+	}
+	result, err := client.Download(
+		context.Background(), testOptions(dir), info, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Files) != 1 {
+		t.Fatalf("files = %v", result.Files)
+	}
+	if filepath.Base(result.Files[0]) != "01_First Song.flac" {
+		t.Fatalf("file = %q", result.Files[0])
 	}
 }
 

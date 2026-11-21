@@ -6,6 +6,7 @@ EBU R128 のアルバムモードで音量を統一する Go 製 CLI / Web UI �
 ## 主な機能
 
 - 公開プレイリストの音声のみをダウンロード
+- プレイリストだけでなく、単体動画・Shorts・youtu.be リンクにも対応
 - 連番ファイル名（`01_曲名.flac`）とカスタム yt-dlp テンプレート
 - FLAC / MP3 / 元の形式、MP3 ビットレート指定
 - プレイリスト全体を解析する 2 パス方式の音量正規化
@@ -15,6 +16,7 @@ EBU R128 のアルバムモードで音量を統一する Go 製 CLI / Web UI �
 - `--keep-going` で失敗曲を飛ばして続行、部分失敗は終了コード `2`
 - ネットワークエラー時のリトライ
 - 並列トラックダウンロードと並列フラグメント取得
+- `--zip` で出力フォルダを ZIP にまとめる
 - メタデータ・カバーアートの埋め込み
 - `--dry-run` / `--list-tracks`
 - JSON 設定、JSON レポート、テキストログ
@@ -147,8 +149,17 @@ ytm-playlist-dl-linux-amd64/
 ## CLI
 
 ```bash
-# 基本
+# 基本（プレイリスト）
 ./ytm-playlist-dl "https://music.youtube.com/playlist?list=PL..."
+
+# 単体動画・Shorts・youtu.be
+./ytm-playlist-dl "https://www.youtube.com/watch?v=VIDEO_ID"
+./ytm-playlist-dl "https://youtube.com/shorts/VIDEO_ID"
+./ytm-playlist-dl "https://youtu.be/VIDEO_ID"
+
+# ZIPにまとめる
+./ytm-playlist-dl "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --output ./downloads --zip
 
 # MP3 + アーティスト名 + 320kbps
 ./ytm-playlist-dl "https://music.youtube.com/playlist?list=PL..." \
@@ -203,6 +214,7 @@ URL を省略すると対話モードになります。
 | `--list-tracks` | 曲一覧のみ表示 | 無効 |
 | `--report-file PATH` | JSON レポート出力先 | なし |
 | `--log-file PATH` | テキストログ出力先 | なし |
+| `--zip` | 出力フォルダを ZIP にまとめる | 無効 |
 | `--json` | 結果を JSON で標準出力 | 無効 |
 | `--output DIR` | 出力先ディレクトリ | `./downloads` |
 | `--yt-dlp PATH` | yt-dlp バイナリのパス | PATH から探索 |
@@ -224,10 +236,11 @@ URL を省略すると対話モードになります。
 
 Web UI では以下が可能です。
 
-- プレイリスト情報・曲一覧の取得
+- プレイリスト情報・曲一覧の取得（単体動画にも対応）
 - 出力形式・テンプレート・音量処理・範囲・並列数の設定
 - ダウンロード開始とリアルタイム進捗
 - ドライラン
+- ZIP まとめ出力
 - 設定保存
 - JSON レポート表示
 
@@ -242,6 +255,7 @@ Web UI では以下が可能です。
 | `GET` | `/api/jobs` | ジョブ一覧 |
 | `GET` | `/api/jobs/<id>` | ジョブ状態・進捗 |
 | `GET` | `/api/jobs/<id>/report` | JSON レポート |
+| `GET` | `/api/jobs/<id>/archive` | ZIPアーカイブ |
 | `GET` | `/health` | ヘルスチェック |
 
 ## 設定ファイル
@@ -253,16 +267,17 @@ Web UI では以下が可能です。
 - `--config PATH` または環境変数 `YTM_PLAYLIST_DL_CONFIG` で変更可能
 
 ```bash
-./ytm-playlist-dl --format mp3 --jobs 2 --save-config
+./ytm-playlist-dl --format mp3 --jobs 2 --zip --save-config
 ```
 
 ## 出力とマニフェスト
 
-出力先は `OUTPUT/プレイリスト名/` です。
+出力先は `OUTPUT/タイトル/` です（プレイリスト名または動画タイトル）。
 
 - 正規化の記録: `.ytm-playlist-dl.manifest.json`
 - ダウンロード中の部分ファイル: `.part` / `.part-FragN`
 - 音量処理をやり直す場合: `--force-normalize`
+- ZIP 出力: `--zip` で `OUTPUT/タイトル.zip` を作成
 
 ## テスト
 

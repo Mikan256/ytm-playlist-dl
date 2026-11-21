@@ -105,6 +105,9 @@ func SelectedEntries(info model.PlaylistInfo, start, end *int) []model.Entry {
 	if len(info.Entries) == 0 {
 		return nil
 	}
+	if !info.IsPlaylist {
+		return append([]model.Entry{}, info.Entries...)
+	}
 	first := 1
 	if start != nil {
 		first = *start
@@ -348,13 +351,26 @@ func (d *Downloader) Download(ctx context.Context, options model.Options,
 			ctx, options, info, selected, safeProgress,
 		)
 	} else {
-		base := BuildTemplate(outputDir, options.Template, options.TemplateString, 0)
-		args := d.buildArgs(options, base, PlaylistItems(options.Start, options.End), normalized)
+		templateIndex := 0
+		playlistItems := ""
+		if !info.IsPlaylist {
+			templateIndex = 1
+		} else {
+			playlistItems = PlaylistItems(options.Start, options.End)
+		}
+		base := BuildTemplate(
+			outputDir, options.Template, options.TemplateString, templateIndex,
+		)
+		args := d.buildArgs(options, base, playlistItems, normalized)
 		counter := 0
 		result := d.runWithRetries(ctx, args, func(event model.Event) {
 			if event.Index == 0 {
-				counter++
-				event.Index = counter
+				if info.IsPlaylist {
+					counter++
+					event.Index = counter
+				} else {
+					event.Index = 1
+				}
 			}
 			event.Total = info.Total
 			safeProgress(event)

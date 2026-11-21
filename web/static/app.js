@@ -96,6 +96,7 @@
     $("force_normalize").checked = Boolean(cfg.force_normalize);
     $("embed_metadata").checked = Boolean(cfg.embed_metadata);
     $("embed_thumbnail").checked = Boolean(cfg.embed_thumbnail);
+    $("zip").checked = Boolean(cfg.zip);
     $("config-path").textContent = data.config_path || "";
     $("fmt").dispatchEvent(new Event("change"));
   }
@@ -132,6 +133,7 @@
       audio_quality: $("audio_quality").value.trim() || null,
       embed_metadata: $("embed_metadata").checked,
       embed_thumbnail: $("embed_thumbnail").checked,
+      zip: $("zip").checked,
       jobs: Number($("jobs").value || 1),
       normalize_jobs: Number($("normalize_jobs").value || 1),
       concurrent_fragments: Number($("concurrent_fragments").value || 1),
@@ -323,10 +325,16 @@
     if (result.exit_code && result.exit_code !== 2) box.classList.add("error");
 
     box.append(summaryRow(
-      "プレイリスト", result.info?.title || state.info?.title || "-"
+      "タイトル", result.info?.title || state.info?.title || "-"
     ));
     box.append(summaryRow("出力先", result.output_dir || "-"));
     box.append(summaryRow("保存曲数", String((result.files || []).length)));
+    if (result.archive_path) {
+      const archive = document.createElement("a");
+      archive.href = `/api/jobs/${state.jobId}/archive`;
+      archive.textContent = "ZIPをダウンロード";
+      box.append(summaryRow("アーカイブ", archive));
+    }
 
     if (result.planned && result.planned.length) {
       box.append(summaryRow("予定曲数", String(result.planned.length)));
