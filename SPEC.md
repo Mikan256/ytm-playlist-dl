@@ -11,11 +11,12 @@ YouTube Music の公開プレイリストを連番付きでダウンロードし
 ## ディレクトリ構成
 ```
 ytm-playlist-dl/
-├── main.py              # CLIエントリポイント
+├── main.py              # CLIエントリポイント（引数モード / 対話モード）
 ├── downloader.py        # yt-dlp を用いたダウンロード処理
 ├── normalizer.py        # EBU R128 ラウドネス正規化
 ├── config.py            # 設定値・デフォルト値の管理
 ├── requirements.txt     # Python依存パッケージ
+├── tests/               # unittest による自動テスト
 └── SPEC.md              # 本仕様書
 ```
 
@@ -44,6 +45,7 @@ ytm-playlist-dl/
   - 1パス目: 全ファイルのラウドネス計測
   - 2パス目: 計測値に基づき全曲に一括ゲイン適用
 - オプションでスキップ可能
+- `original` 形式でも正規化する場合は、ゲイン適用のため同一コンテナの音声コーデックへ再エンコードする
 
 ### 5. 再開可能
 - 出力先に同名ファイルが存在する場合はスキップ
@@ -59,12 +61,13 @@ ytm-playlist-dl/
 ```
 usage: python main.py [-h] [--format {flac,mp3,original}]
                       [--template {num_title,num_artist_title}]
-                      [--loudness LOUDNESS] [--output OUTPUT]
+                      [--loudness LUFS] [--output OUTPUT]
                       [--no-normalize]
-                      url
+                      [url]
 
 positional arguments:
   url                   YouTube Music プレイリストURL
+                        （省略すると対話モード）
 
 options:
   -h, --help            ヘルプ表示
@@ -73,12 +76,15 @@ options:
   --template {num_title,num_artist_title}
                         ファイル名テンプレート
                         (default: num_title)
-  --loudness LOUDNESS   ターゲットラウドネス [LUFS]
-                        (default: -14)
+  --loudness LUFS       ターゲットラウドネス [LUFS]
+                        -30〜-5の範囲 (default: -14)
   --output OUTPUT       出力先ディレクトリ
                         (default: ./downloads)
   --no-normalize        音量正規化をスキップ
 ```
+
+URLを指定した場合は引数モードで動作し、確認プロンプトなしで実行する。
+URLを省略した場合は対話モードとなり、形式・テンプレート・正規化などを順に質問する。
 
 ## 処理フロー
 
@@ -102,10 +108,24 @@ main.py
 ```
 
 ## エラーハンドリング
-- 無効なURL → エラーメッセージ表示して終了
+- 無効なURL（プレイリストIDなし・非対応ホスト） → エラーメッセージ表示して終了
 - ネットワークエラー → リトライ（最大3回）
 - ダウンロード中の部分ファイルは `.part` として管理、再開時にクリーンアップ
-- ffmpeg未インストール → インストールを促すメッセージ
+- yt-dlp未インストール → `pip install -r requirements.txt` を促すメッセージ
+- ffmpeg/ffprobe未インストール → インストールを促すメッセージ
+- 1曲も保存できなかった場合 → エラーとして終了
+
+## テスト
+
+標準ライブラリの `unittest` を使用する（追加依存なし）。
+
+```
+python -m unittest discover -s tests -v
+```
+
+ネットワーク・yt-dlp・ffmpegに依存しないよう、外部処理はモックして
+URL正規化、ファイル収集、ラウドネス計算、ゲイン適用コマンド、
+CLI引数解析などを検証する。
 
 ## 注意事項
 - 著作権で保護されたコンテンツは個人視聴目的でのみ使用すること

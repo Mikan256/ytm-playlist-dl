@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import os
 import sys
 
@@ -9,11 +10,62 @@ from config import (
     DEFAULT_TEMPLATE,
     FORMAT_CHOICES,
     FORMAT_DESCRIPTIONS,
+    LOUDNESS_MAX,
+    LOUDNESS_MIN,
     TEMPLATE_CHOICES,
     TEMPLATE_LABELS,
 )
-from downloader import get_playlist_info, download_playlist
+from downloader import download_playlist, get_playlist_info
 from normalizer import normalize_album
+
+
+def loudness_type(value):
+    try:
+        loudness = float(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("loudness must be a number")
+    if not LOUDNESS_MIN <= loudness <= LOUDNESS_MAX:
+        raise argparse.ArgumentTypeError(
+            f"loudness must be between {LOUDNESS_MIN:g} and {LOUDNESS_MAX:g} LUFS"
+        )
+    return loudness
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="python main.py",
+        description=(
+            "Download a public YouTube Music playlist with sequential "
+            "filenames and EBU R128 album loudness normalisation."
+        ),
+    )
+    parser.add_argument(
+        "url",
+        nargs="?",
+        help="YouTube Music playlist URL (omit for interactive mode)",
+    )
+    parser.add_argument(
+        "--format", dest="fmt", choices=FORMAT_CHOICES, default=DEFAULT_FORMAT,
+        help="output format (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--template", choices=TEMPLATE_CHOICES, default=DEFAULT_TEMPLATE,
+        help="file name template (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--loudness", type=loudness_type, default=DEFAULT_LOUDNESS,
+        metavar="LUFS",
+        help="target loudness in LUFS (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--output", default=DEFAULT_OUTPUT,
+        help="output directory (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--no-normalize", action="store_true",
+        help="skip loudness normalisation",
+    )
+    return parser
 
 
 def prompt(msg, default=None, choices=None):
@@ -34,7 +86,8 @@ def prompt(msg, default=None, choices=None):
 
 
 def prompt_int(msg, default=None, min_val=None, max_val=None):
-    val = input(f"{msg} [{default}]: ").strip()
+    hint = f" [{default}]" if default is not None else ""
+    val = input(f"{msg}{hint}: ").strip()
     if not val:
         return default
     try:
@@ -59,11 +112,11 @@ def prompt_bool(msg, default=True):
     return val.startswith("y")
 
 
-def select_template():
+def select_template(default=DEFAULT_TEMPLATE):
     print("\nFile naming:")
     for i, key in enumerate(TEMPLATE_CHOICES, 1):
         print(f"  {i}. {TEMPLATE_LABELS[key]}")
-    default_idx = 1
+    default_idx = TEMPLATE_CHOICES.index(default) + 1
     val = input(f"  Select [{default_idx}]: ").strip()
     if not val:
         return TEMPLATE_CHOICES[default_idx - 1]
@@ -74,11 +127,12 @@ def select_template():
     except ValueError:
         pass
     print(f"  Please enter a number 1-{len(TEMPLATE_CHOICES)}")
-    return select_template()
+    return select_template(default)
 
 
-def download_progress(index, title):
-    sys.stderr.write(f"\r  [{index}] Downloaded: {title}\n")
+def download_progress(index, total, title):
+    total = total or "?"
+    sys.stderr.write(f"\r  [{index}/{total}] Downloaded: {title}\n")
     sys.stderr.flush()
 
 
@@ -86,6 +140,67 @@ def normalise_progress(current, total, label, phase):
     phase_label = "Analysing" if phase == "analysing" else "Normalising"
     sys.stderr.write(f"\r  [{current}/{total}] {phase_label}: {label}\n")
     sys.stderr.flush()
+
+
+def _print_playlist_info(info):
+    print(f"\nPlaylist: {info['title']}")
+    print(f"Tracks:   {info['total']}")
+    print()
+
+
+def run(url, fmt=DEFAULT_FORMAT, template=DEFAULT_TEMPLATE,
+        do_normalize=True, loudness=DEFAULT_LOUDNESS,
+        output_base=DEFAULT_OUTPUT, info=None, confirm=False,
+        show_info=True):
+    """Download and normalise one playlist. Returns a process exit code."""
+    if info is None:
+        print("Fetching playlist info...")
+        try:
+            info = get_playlist_info(url)
+        except Exception as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+
+    if show_info:
+        _print_playlist_info(info)
+
+    output_base = os.path.expanduser(output_base)
+    playlist_dir = os.path.join(output_base, info["title"])
+    print(f"Output: {playlist_dir}")
+
+    if confirm and not prompt_bool("Start download?", default=True):
+        print("Cancelled.")
+        return 0
+
+    print(f"\nDownloading: {info['title']} ({info['total']} tracks)")
+    try:
+        files = download_playlist(
+            url, playlist_dir,
+            fmt=fmt, template=template,
+            progress_callback=download_progress,
+            total=info["total"],
+        )
+    except Exception as exc:
+        print(f"\nDownload failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"\nDownloaded {len(files)}/{info['total']} tracks")
+
+    if do_normalize and files:
+        print(f"\nNormalising volume (album mode, target: {loudness} LUFS)...")
+        try:
+            files = normalize_album(
+                files, target_loudness=loudness,
+                progress_callback=normalise_progress,
+            )
+        except Exception as exc:
+            print(f"\nNormalisation failed: {exc}", file=sys.stderr)
+            return 1
+        print()
+
+    print(f"\nDone! Saved to: {playlist_dir}")
+    print(f"Total: {len(files)} tracks")
+    return 0
 
 
 def interactive():
@@ -97,19 +212,20 @@ def interactive():
     url = prompt("Enter playlist URL")
     if not url:
         print("URL is required")
-        sys.exit(1)
+        return 1
 
     print("\nFetching playlist info...")
     try:
         info = get_playlist_info(url)
-    except RuntimeError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
-    print(f"\nPlaylist: {info['title']}")
-    print(f"Tracks:   {info['total']}")
-    print()
+    _print_playlist_info(info)
 
+    print("Output format:")
+    for key in FORMAT_CHOICES:
+        print(f"  {key}: {FORMAT_DESCRIPTIONS[key]}")
     fmt = prompt(
         "Output format",
         default=DEFAULT_FORMAT,
@@ -129,8 +245,8 @@ def interactive():
         loudness = prompt_int(
             "  Value",
             default=DEFAULT_LOUDNESS,
-            min_val=-30,
-            max_val=-5,
+            min_val=LOUDNESS_MIN,
+            max_val=LOUDNESS_MAX,
         )
 
     output_base = prompt(
@@ -138,46 +254,33 @@ def interactive():
         default=DEFAULT_OUTPUT,
     )
 
-    playlist_dir = os.path.join(output_base, info["title"])
-    print(f"\nOutput: {playlist_dir}")
-    print()
-
     if not prompt_bool("Start download?", default=True):
         print("Cancelled.")
-        sys.exit(0)
+        return 0
 
-    print(f"\nDownloading: {info['title']} ({info['total']} tracks)")
+    return run(
+        url, fmt=fmt, template=template,
+        do_normalize=do_normalize, loudness=loudness,
+        output_base=output_base, info=info, confirm=False,
+        show_info=False,
+    )
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
     try:
-        files = download_playlist(
-            url, playlist_dir,
-            fmt=fmt, template=template,
-            progress_callback=download_progress,
-        )
-    except Exception as e:
-        print(f"\nDownload failed: {e}")
-        sys.exit(1)
-
-    print(f"\n\nDownloaded {len(files)}/{info['total']} tracks")
-
-    if do_normalize and files:
-        print(f"\nNormalising volume (album mode, target: {loudness} LUFS)...")
-        files = normalize_album(
-            files, target_loudness=loudness,
-            progress_callback=normalise_progress,
-        )
-        print()
-
-    print(f"\nDone! Saved to: {playlist_dir}")
-    print(f"Total: {len(files)} tracks")
-
-
-def main():
-    try:
-        interactive()
+        if args.url:
+            return run(
+                args.url, fmt=args.fmt, template=args.template,
+                do_normalize=not args.no_normalize,
+                loudness=args.loudness, output_base=args.output,
+            )
+        return interactive()
     except KeyboardInterrupt:
         print("\nInterrupted.")
-        sys.exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
