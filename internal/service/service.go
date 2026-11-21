@@ -78,6 +78,7 @@ func (Service) Execute(ctx context.Context, options model.Options,
 	downloadResult, downloadErr := downloaderClient.Download(
 		ctx, options, *info, progress,
 	)
+	downloadResult = downloadResult.WithSlices()
 	if downloadErr != nil {
 		return finishWithError(options, *info, outputDir, &downloadResult,
 			nil, downloadErr, progress, &result)
@@ -88,7 +89,6 @@ func (Service) Execute(ctx context.Context, options model.Options,
 		"download finished: %d files, %d failed",
 		len(downloadResult.Files), len(downloadResult.Failed),
 	))
-
 	var normalization *model.NormalizationResult
 	if options.NormalizeMode != "off" && len(downloadResult.Files) > 0 {
 		emit(progress, model.Event{
@@ -110,6 +110,7 @@ func (Service) Execute(ctx context.Context, options model.Options,
 			return finishWithError(options, *info, outputDir, &downloadResult,
 				nil, err, progress, &result)
 		}
+		processed = processed.WithSlices()
 		normalization = &processed
 		result.Normalization = normalization
 		appendLog(options.LogFile, fmt.Sprintf(
@@ -145,6 +146,14 @@ func finishWithError(options model.Options, info model.PlaylistInfo,
 	outputDir string, download *model.DownloadResult,
 	normalization *model.NormalizationResult, runErr error,
 	progress func(model.Event), result *model.RunResult) (model.RunResult, error) {
+	if download != nil {
+		clean := download.WithSlices()
+		download = &clean
+	}
+	if normalization != nil {
+		clean := normalization.WithSlices()
+		normalization = &clean
+	}
 	result.Download = download
 	result.Normalization = normalization
 	if download != nil {

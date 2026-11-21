@@ -275,6 +275,9 @@ func (d *Downloader) buildArgs(options model.Options, outputTemplate,
 	if options.EmbedThumbnail {
 		args = append(args, "--write-thumbnail", "--embed-thumbnail")
 	}
+	if options.FFmpegPath != "" {
+		args = append(args, "--ffmpeg-location", options.FFmpegPath)
+	}
 	args = append(args, url)
 	return args
 }

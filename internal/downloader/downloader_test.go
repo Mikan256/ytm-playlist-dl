@@ -173,6 +173,24 @@ func TestCleanupPartials(t *testing.T) {
 	}
 }
 
+func TestBuildArgsIncludesFfmpegLocation(t *testing.T) {
+	options := testOptions("/tmp/out")
+	options.FFmpegPath = "/opt/ffmpeg/bin/ffmpeg"
+	args := (&Downloader{}).buildArgs(
+		options, "/tmp/out/%(title)s.%(ext)s", "", "https://youtube.com/watch?v=a",
+	)
+	found := false
+	for index, arg := range args {
+		if arg == "--ffmpeg-location" && index+1 < len(args) &&
+			args[index+1] == options.FFmpegPath {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("--ffmpeg-location missing from %v", args)
+	}
+}
+
 func TestDownloadSerial(t *testing.T) {
 	client := fakeDownloaderClient(t, fakeDownloader)
 	dir := t.TempDir()

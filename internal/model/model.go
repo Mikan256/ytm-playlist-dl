@@ -25,6 +25,20 @@ type DownloadResult struct {
 	Skipped []string `json:"skipped"`
 }
 
+// WithSlices makes JSON encode empty collections as [] rather than null.
+func (r DownloadResult) WithSlices() DownloadResult {
+	if r.Files == nil {
+		r.Files = []string{}
+	}
+	if r.Failed == nil {
+		r.Failed = []string{}
+	}
+	if r.Skipped == nil {
+		r.Skipped = []string{}
+	}
+	return r
+}
+
 // NormalizationResult describes loudness processing.
 type NormalizationResult struct {
 	Files         []string `json:"files"`
@@ -34,6 +48,23 @@ type NormalizationResult struct {
 	AlbumLoudness *float64 `json:"album_loudness"`
 	GainDB        *float64 `json:"gain_db"`
 	Mode          string   `json:"mode"`
+}
+
+// WithSlices makes JSON encode empty collections as [] rather than null.
+func (r NormalizationResult) WithSlices() NormalizationResult {
+	if r.Files == nil {
+		r.Files = []string{}
+	}
+	if r.Normalized == nil {
+		r.Normalized = []string{}
+	}
+	if r.Skipped == nil {
+		r.Skipped = []string{}
+	}
+	if r.Failed == nil {
+		r.Failed = []string{}
+	}
+	return r
 }
 
 // Measurement is one track's loudness analysis.
