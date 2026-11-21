@@ -13,6 +13,13 @@ licenses are listed below. Full license texts are in `LICENSES/`.
 | yt-dlp | Unlicense | `LICENSES/yt-dlp-Unlicense.txt` |
 | FFmpeg / ffprobe | GPL-3.0 or LGPL-2.1 depending on build | `LICENSES/FFmpeg-GPLv3.txt`, `LICENSES/FFmpeg-LGPLv2.1.txt` |
 | Go runtime / standard library | BSD-3-Clause | `LICENSES/Go-BSD-3-Clause.txt` |
+| Wails v3 | MIT | `LICENSES/Wails-MIT.txt` |
+| ebitengine/purego | Apache-2.0 | `LICENSES/purego-Apache-2.0.txt` |
+| godbus/dbus | BSD-2-Clause | `LICENSES/godbus-BSD-2-Clause.txt` |
+| go-ole | MIT | `LICENSES/go-ole-MIT.txt` |
+| coder/websocket | ISC | `LICENSES/coder-websocket-ISC.txt` |
+| golang.org/x/sys | BSD-3-Clause | `LICENSES/x-sys-BSD-3-Clause.txt` |
+| golang.org/x/term | BSD-3-Clause | `LICENSES/x-term-BSD-3-Clause.txt` |
 | github.com/spf13/pflag | BSD-3-Clause | `LICENSES/pflag-BSD-3-Clause.txt` |
 
 ## yt-dlp
@@ -50,6 +57,28 @@ The compiled Go binaries include the Go runtime and standard library.
 - Project: https://go.dev/
 - License: BSD-3-Clause
 - Included file: `LICENSES/Go-BSD-3-Clause.txt`
+
+## Wails v3 and desktop dependencies
+
+The desktop application uses Wails v3 for the native window.
+
+- Wails: https://github.com/wailsapp/wails — MIT
+  (`LICENSES/Wails-MIT.txt`)
+- ebitengine/purego: https://github.com/ebitengine/purego — Apache-2.0
+  (`LICENSES/purego-Apache-2.0.txt`)
+- godbus/dbus: https://github.com/godbus/dbus — BSD-2-Clause
+  (`LICENSES/godbus-BSD-2-Clause.txt`)
+- go-ole: https://github.com/go-ole/go-ole — MIT
+  (`LICENSES/go-ole-MIT.txt`)
+- coder/websocket: https://github.com/coder/websocket — ISC
+  (`LICENSES/coder-websocket-ISC.txt`)
+- golang.org/x/sys: BSD-3-Clause
+  (`LICENSES/x-sys-BSD-3-Clause.txt`)
+- golang.org/x/term: BSD-3-Clause
+  (`LICENSES/x-term-BSD-3-Clause.txt`)
+
+The desktop app uses the operating system's WebView (WebView2, WKWebView,
+GTK/WebKitGTK). Those runtime libraries are not relicensed by this project.
 
 ## github.com/spf13/pflag
 

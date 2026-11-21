@@ -21,13 +21,18 @@ EBU R128 のアルバムモードで音量を統一する Go 製 CLI / Web UI �
 - `--dry-run` / `--list-tracks`
 - JSON 設定、JSON レポート、テキストログ
 - ブラウザ UI（レトロな紙面風デザイン、静的ファイルをバイナリに埋め込み）
+- Wails v3 によるデスクトップ版（Windows / macOS / Linux）
 - yt-dlp / ffmpeg を同梱したポータブル配布が可能
 
 ## 必要環境
 
-- Go 1.22+（ビルドする場合）
+- Go 1.26+（ビルドする場合）
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) のスタンドアロンバイナリ
 - ffmpeg / ffprobe（音量処理・メタデータ埋め込みを使う場合）
+
+デスクトップ版は Wails v3 を使用します。
+Linux では GTK4 / WebKitGTK 6.0 のランタイムが必要です
+（古い環境では GTK3 / WebKit2GTK 4.1 向けにビルドできます）。
 
 同梱バンドル版は yt-dlp / ffmpeg / ffprobe をすべて含むため、
 これらを別途インストールする必要はありません。
@@ -257,6 +262,50 @@ Web UI では以下が可能です。
 | `GET` | `/api/jobs/<id>/report` | JSON レポート |
 | `GET` | `/api/jobs/<id>/archive` | ZIPアーカイブ |
 | `GET` | `/health` | ヘルスチェック |
+
+## デスクトップ版（Wails v3）
+
+既存の Web UI を Wails v3 のネイティブウィンドウで表示します。
+UI・設定・ダウンロード処理・Web API はブラウザ版と共通です。
+
+```bash
+CGO_ENABLED=0 go build -tags purego,production \
+  -o ytm-playlist-dl-desktop \
+  ./cmd/ytm-playlist-dl-desktop
+
+./ytm-playlist-dl-desktop
+```
+
+Wails v3.1 の purego バックエンドを使うため、Linux でも C コンパイラや
+開発ヘッダーなしでビルドできます。ただし実行時には OS の WebView
+ランタイムが必要です。
+
+- Windows: WebView2
+- macOS: WKWebView（OS 標準）
+  - `.app` の場合は `Contents/Resources/bin/` も探索します
+- Linux: GTK4 / WebKitGTK 6.0
+  - 古い環境では `-tags purego,gtk3,production` と GTK3 / WebKit2GTK 4.1
+
+### バイナリを同梱したデスクトップ配布
+
+```bash
+scripts/build-bundle.sh --desktop
+```
+
+生成物に `ytm-playlist-dl-desktop` と `bin/yt-dlp` / `ffmpeg` / `ffprobe`、
+ライセンス類が含まれます。
+
+```text
+dist/ytm-playlist-dl-<version>-linux-amd64/
+├── ytm-playlist-dl-desktop
+├── bin/
+├── LICENSE
+└── LICENSES/
+```
+
+macOS の `.app` 化・公証、Windows のインストーラ作成は別途必要です。
+現時点のデスクトップ版は、既存 UI をネイティブウィンドウで表示する
+シェル実装です。メニューやネイティブのフォルダ選択は今後の拡張対象です。
 
 ## 設定ファイル
 

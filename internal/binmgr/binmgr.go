@@ -117,6 +117,19 @@ func Resolve(tool Tool, explicit string) (string, error) {
 		if path, ok := inDir(filepath.Join(dir, "bin"), tool); ok {
 			return path, nil
 		}
+		if runtime.GOOS == "darwin" {
+			// A macOS .app places the executable in Contents/MacOS and
+			// resources in Contents/Resources.
+			contents := filepath.Dir(dir)
+			for _, candidate := range []string{
+				filepath.Join(contents, "Resources", "bin"),
+				filepath.Join(contents, "Resources"),
+			} {
+				if path, ok := inDir(candidate, tool); ok {
+					return path, nil
+				}
+			}
+		}
 	}
 	if cwd, err := getwd(); err == nil {
 		if path, ok := inDir(cwd, tool); ok {

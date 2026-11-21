@@ -1,12 +1,20 @@
 # Build output
 /ytm-playlist-dl
 /ytm-playlist-dl-web
+/ytm-playlist-dl-desktop
 /dist/
 /bin
 *.exe
+*.app
+*.dmg
+*.msi
+*.AppImage
+*.deb
+*.rpm
 *.test
 coverage.out
 coverage.html
+.task/
 
 # Runtime output
 downloads/

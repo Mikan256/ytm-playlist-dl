@@ -5,21 +5,22 @@ YouTube Music の公開プレイリストを連番付きでダウンロードし
 Go 製 CLI / Web UI ツール。
 
 ## 依存関係
-- Go 1.22+（ビルド時）
+- Go 1.26+（ビルド時。Wails v3 の要件）
 - yt-dlp（スタンドアロンバイナリ）
 - ffmpeg / ffprobe（音量処理・メタデータ埋め込みに使用）
 
 同梱バンドル版には yt-dlp / ffmpeg / ffprobe を含めることができる。
 Go 版は yt-dlp をサブプロセスとして実行する。Python ランタイムは不要。
 Web UI は Go 標準ライブラリの HTTP サーバーで動作し、静的ファイルは
-バイナリに埋め込まれる。
+バイナリに埋め込まれる。デスクトップ版は Wails v3 の purego バックエンドを使う。
 
 ## ディレクトリ構成
 ```text
 ytm-playlist-dl/
 ├── cmd/
 │   ├── ytm-playlist-dl/       # CLI エントリポイント
-│   └── ytm-playlist-dl-web/   # Web UI エントリポイント
+│   ├── ytm-playlist-dl-web/   # Web UI エントリポイント
+│   └── ytm-playlist-dl-desktop/ # Wails v3 デスクトップ版
 ├── internal/
 │   ├── archive/               # ZIP 作成
 │   ├── binmgr/                # yt-dlp / ffmpeg / ffprobe の探索
@@ -130,12 +131,13 @@ ytm-playlist-dl/
 - 静的ファイルは `embed` でバイナリに同梱
 
 ### 14. ビルド・CI
-- 単一バイナリ（CGO 不要）
+- CGO 不要（CLI / Web）
+- デスクトップ版は Wails v3 purego で CGO 不要
 - `go test ./...`
 - `go test -race ./...`
 - `go vet ./...`
 - gofmt チェック
-- GitHub Actions（Go 1.22 / 1.23）
+- GitHub Actions（Go 1.26 / 1.27）
 
 ### 15. ポータブルバンドル
 - `scripts/build-bundle.sh` で yt-dlp / ffmpeg / ffprobe を同梱
@@ -159,6 +161,15 @@ ytm-playlist-dl/
 - レポートに `archive_path` を記録
 - Web UI では「ZIPにまとめる」で指定し、完了後にダウンロード可能
 - `GET /api/jobs/<id>/archive` で ZIP を取得
+
+### 17. デスクトップ版（Wails v3）
+- `cmd/ytm-playlist-dl-desktop` でネイティブウィンドウを表示
+- 既存の Web UI / API / サービス層をそのまま利用
+- Wails v3.1 の purego バックエンドで CGO なしビルド
+- `CGO_ENABLED=0 go build -tags purego,production`
+- Windows: WebView2、macOS: WKWebView、Linux: GTK4 / WebKitGTK 6.0
+- Linux 旧環境向け: `-tags purego,gtk3,production`（GTK3 / WebKit2GTK 4.1）
+- `scripts/build-bundle.sh --desktop` で yt-dlp / ffmpeg 同梱可能
 
 ## CLI
 
@@ -266,6 +277,12 @@ go vet ./...
 - FFmpeg / ffprobe: GPL-3.0 または LGPL-2.1（ビルドによる。
   `LICENSES/FFmpeg-GPLv3.txt`、`LICENSES/FFmpeg-LGPLv2.1.txt`）
 - Go runtime: BSD-3-Clause（`LICENSES/Go-BSD-3-Clause.txt`）
+- Wails v3: MIT（`LICENSES/Wails-MIT.txt`）
+- ebitengine/purego: Apache-2.0（`LICENSES/purego-Apache-2.0.txt`）
+- godbus/dbus: BSD-2-Clause
+- go-ole: MIT
+- coder/websocket: ISC
+- golang.org/x/sys, x/term: BSD-3-Clause
 - github.com/spf13/pflag: BSD-3-Clause
   （`LICENSES/pflag-BSD-3-Clause.txt`）
 

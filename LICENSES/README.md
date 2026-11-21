@@ -10,6 +10,13 @@ software that can be bundled into a portable release.
 | `FFmpeg-GPLv3.txt` | FFmpeg GPL builds | GPL-3.0 |
 | `FFmpeg-LGPLv2.1.txt` | FFmpeg LGPL builds | LGPL-2.1 |
 | `Go-BSD-3-Clause.txt` | Go runtime / standard library | BSD-3-Clause |
+| `Wails-MIT.txt` | Wails v3 | MIT |
+| `purego-Apache-2.0.txt` | ebitengine/purego | Apache-2.0 |
+| `godbus-BSD-2-Clause.txt` | godbus/dbus | BSD-2-Clause |
+| `go-ole-MIT.txt` | go-ole | MIT |
+| `coder-websocket-ISC.txt` | coder/websocket | ISC |
+| `x-sys-BSD-3-Clause.txt` | golang.org/x/sys | BSD-3-Clause |
+| `x-term-BSD-3-Clause.txt` | golang.org/x/term | BSD-3-Clause |
 | `pflag-BSD-3-Clause.txt` | github.com/spf13/pflag | BSD-3-Clause |
 
 ## FFmpeg

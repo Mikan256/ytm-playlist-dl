@@ -17,6 +17,7 @@ VERSION="${VERSION:-0.4.1}"
 YTDLP_PATH=""
 FFMPEG_PATH=""
 FFPROBE_PATH=""
+DESKTOP=0
 
 usage() {
   cat <<'USAGE'
@@ -30,6 +31,7 @@ Options:
   --yt-dlp PATH        use a local yt-dlp instead of downloading
   --ffmpeg PATH        use a local ffmpeg instead of downloading
   --ffprobe PATH       use a local ffprobe instead of downloading
+  --desktop            also build the Wails v3 desktop application
   -h, --help           show this help
 USAGE
 }
@@ -43,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --yt-dlp) YTDLP_PATH="$2"; shift 2 ;;
     --ffmpeg) FFMPEG_PATH="$2"; shift 2 ;;
     --ffprobe) FFPROBE_PATH="$2"; shift 2 ;;
+    --desktop) DESKTOP=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -167,12 +170,24 @@ CGO_ENABLED=0 GOOS="$OS" GOARCH="$ARCH" go build -trimpath \
   -o "$OUT/ytm-playlist-dl-web$SUFFIX" \
   "$ROOT/cmd/ytm-playlist-dl-web"
 
+if [[ "$DESKTOP" -eq 1 ]]; then
+  echo "Building Wails v3 desktop application for $OS/$ARCH"
+  CGO_ENABLED=0 GOOS="$OS" GOARCH="$ARCH" go build -trimpath \
+    -tags purego,production \
+    -ldflags "-s -w" \
+    -o "$OUT/ytm-playlist-dl-desktop$SUFFIX" \
+    "$ROOT/cmd/ytm-playlist-dl-desktop"
+fi
+
 # --- notices and documentation -------------------------------------------
 cp "$ROOT/README.md" "$ROOT/SPEC.md" "$ROOT/THIRD_PARTY_NOTICES.md" "$OUT/"
 cp "$ROOT/LICENSE" "$OUT/"
 cp -R "$ROOT/LICENSES/." "$OUT/LICENSES/"
 
 chmod +x "$OUT/ytm-playlist-dl$SUFFIX" "$OUT/ytm-playlist-dl-web$SUFFIX"
+if [[ "$DESKTOP" -eq 1 ]]; then
+  chmod +x "$OUT/ytm-playlist-dl-desktop$SUFFIX"
+fi
 mkdir -p "$ROOT/dist"
 OUT_PARENT="$(dirname "$OUT")"
 OUT_NAME="$(basename "$OUT")"
