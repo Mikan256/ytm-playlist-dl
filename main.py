@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 import argparse
-import os
+import json
 import sys
 
+import config
+import service
 from config import (
-    DEFAULT_FORMAT,
-    DEFAULT_LOUDNESS,
-    DEFAULT_OUTPUT,
     DEFAULT_TEMPLATE,
     FORMAT_CHOICES,
     FORMAT_DESCRIPTIONS,
     LOUDNESS_MAX,
     LOUDNESS_MIN,
+    NORMALIZE_MODES,
     TEMPLATE_CHOICES,
     TEMPLATE_LABELS,
 )
-from downloader import download_playlist, get_playlist_info
-from normalizer import normalize_album
+from downloader import get_playlist_info
+from options import RunOptions
 
 
 def loudness_type(value):
@@ -31,39 +31,154 @@ def loudness_type(value):
     return loudness
 
 
-def build_parser():
-    parser = argparse.ArgumentParser(
+def positive_int(value):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be an integer")
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be 1 or greater")
+    return number
+
+
+class PlaylistArgumentParser(argparse.ArgumentParser):
+    def parse_args(self, args=None, namespace=None):
+        parsed = super().parse_args(args, namespace)
+        if (parsed.start is not None and parsed.end is not None
+                and parsed.end < parsed.start):
+            self.error("--end must be greater than or equal to --start")
+        return parsed
+
+
+def build_parser(config_values=None):
+    cfg = config.default_config()
+    cfg.update(config_values or {})
+
+    parser = PlaylistArgumentParser(
         prog="python main.py",
         description=(
             "Download a public YouTube Music playlist with sequential "
-            "filenames and EBU R128 album loudness normalisation."
+            "filenames, optional EBU R128 normalisation and a browser UI."
         ),
     )
     parser.add_argument(
         "url",
         nargs="?",
-        help="YouTube Music playlist URL (omit for interactive mode)",
+        help="YouTube Music playlist URL (omit for interactive/web mode)",
     )
     parser.add_argument(
-        "--format", dest="fmt", choices=FORMAT_CHOICES, default=DEFAULT_FORMAT,
+        "--format", dest="fmt", choices=FORMAT_CHOICES,
+        default=cfg["format"],
         help="output format (default: %(default)s)",
     )
     parser.add_argument(
-        "--template", choices=TEMPLATE_CHOICES, default=DEFAULT_TEMPLATE,
+        "--template", choices=TEMPLATE_CHOICES, default=cfg["template"],
         help="file name template (default: %(default)s)",
     )
     parser.add_argument(
-        "--loudness", type=loudness_type, default=DEFAULT_LOUDNESS,
+        "--template-string", default=cfg["template_string"],
+        help="custom yt-dlp output template (overrides --template)",
+    )
+    parser.add_argument(
+        "--loudness", type=loudness_type, default=cfg["loudness"],
         metavar="LUFS",
         help="target loudness in LUFS (default: %(default)s)",
     )
     parser.add_argument(
-        "--output", default=DEFAULT_OUTPUT,
+        "--output", default=cfg["output"],
         help="output directory (default: %(default)s)",
     )
+    normalize = parser.add_mutually_exclusive_group()
+    normalize.add_argument(
+        "--normalize-mode", choices=NORMALIZE_MODES,
+        default=cfg["normalize_mode"],
+        help="normalisation mode (default: %(default)s)",
+    )
+    normalize.add_argument(
+        "--no-normalize", dest="normalize_mode", action="store_const",
+        const="off", help="skip loudness normalisation",
+    )
+    normalize.add_argument(
+        "--replaygain", dest="normalize_mode", action="store_const",
+        const="replaygain",
+        help="write ReplayGain tags without re-encoding",
+    )
     parser.add_argument(
-        "--no-normalize", action="store_true",
-        help="skip loudness normalisation",
+        "--force-normalize", action="store_true",
+        default=cfg["force_normalize"],
+        help="normalise even when the manifest says it is already done",
+    )
+    parser.add_argument(
+        "--start", type=positive_int, default=None,
+        help="first track number to download (1-based)",
+    )
+    parser.add_argument(
+        "--end", type=positive_int, default=None,
+        help="last track number to download (inclusive)",
+    )
+    parser.add_argument(
+        "--keep-going", action="store_true", default=cfg["keep_going"],
+        help="continue after individual track failures and report them",
+    )
+    parser.add_argument(
+        "--audio-quality", default=cfg["audio_quality"],
+        help="MP3 bitrate, e.g. 192 or 320",
+    )
+    parser.add_argument(
+        "--embed-metadata", action="store_true",
+        default=cfg["embed_metadata"],
+        help="embed title/artist metadata",
+    )
+    parser.add_argument(
+        "--embed-thumbnail", action="store_true",
+        default=cfg["embed_thumbnail"],
+        help="download and embed cover art",
+    )
+    parser.add_argument(
+        "--jobs", type=positive_int, default=cfg["jobs"],
+        help="number of tracks to download in parallel (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--concurrent-fragments", type=positive_int,
+        default=cfg["concurrent_fragments"],
+        help="parallel fragments per track (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="show the planned output without downloading",
+    )
+    parser.add_argument(
+        "--list-tracks", action="store_true",
+        help="only list playlist tracks and exit",
+    )
+    parser.add_argument(
+        "--report-file", default=None, help="write a JSON run report"
+    )
+    parser.add_argument(
+        "--log-file", default=None, help="append a text log"
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="print the JSON report to stdout"
+    )
+    parser.add_argument(
+        "--config", default=None, help="path to a JSON config file"
+    )
+    parser.add_argument(
+        "--save-config", action="store_true",
+        help="save the resolved settings to the config file",
+    )
+    parser.add_argument(
+        "--web", action="store_true", help="start the browser UI"
+    )
+    parser.add_argument(
+        "--host", default=config.DEFAULT_HOST, help="web UI bind address"
+    )
+    parser.add_argument(
+        "--port", type=int, default=config.DEFAULT_PORT, help="web UI port"
+    )
+    parser.add_argument(
+        "--open-browser", action="store_true",
+        help="open the web UI in the default browser",
     )
     return parser
 
@@ -148,62 +263,117 @@ def _print_playlist_info(info):
     print()
 
 
-def run(url, fmt=DEFAULT_FORMAT, template=DEFAULT_TEMPLATE,
-        do_normalize=True, loudness=DEFAULT_LOUDNESS,
-        output_base=DEFAULT_OUTPUT, info=None, confirm=False,
-        show_info=True):
-    """Download and normalise one playlist. Returns a process exit code."""
+def _print_tracks(info):
+    print(f"\nPlaylist: {info['title']} ({info['total']} tracks)")
+    for entry in info.get("entries") or []:
+        duration = entry.get("duration")
+        suffix = f" ({int(duration)}s)" if duration else ""
+        print(f"  {int(entry.get('index', 0)):02d}. {entry.get('title')}{suffix}")
+    print()
+
+
+def _print_planned(planned):
+    print(f"\nDry run: {len(planned)} track(s)")
+    for path in planned:
+        print(f"  {path}")
+    print()
+
+
+def _args_to_options(args):
+    return RunOptions(
+        url=args.url or "",
+        fmt=args.fmt,
+        template=args.template,
+        template_string=args.template_string,
+        loudness=args.loudness,
+        output=args.output,
+        normalize_mode=args.normalize_mode,
+        force_normalize=args.force_normalize,
+        start=args.start,
+        end=args.end,
+        keep_going=args.keep_going,
+        audio_quality=args.audio_quality,
+        embed_metadata=args.embed_metadata,
+        embed_thumbnail=args.embed_thumbnail,
+        concurrent_fragments=args.concurrent_fragments,
+        jobs=args.jobs,
+        dry_run=args.dry_run,
+        list_tracks=args.list_tracks,
+        log_file=args.log_file,
+        report_file=args.report_file,
+    )
+
+
+def _progress_printer(event):
+    if event.get("type") == "download":
+        download_progress(event["index"], event["total"], event["title"])
+    elif event.get("type") == "normalize":
+        normalise_progress(
+            event["current"], event["total"], event["label"], event["phase"]
+        )
+    elif event.get("type") == "status" and event.get("message"):
+        sys.stderr.write(f"  {event['message']}\n")
+        sys.stderr.flush()
+
+
+def run(options, info=None, confirm=False, show_info=True, json_output=False):
+    """Execute options through the shared service. Returns an exit code."""
+    options.validate()
     if info is None:
-        print("Fetching playlist info...")
+        if not json_output:
+            print("Fetching playlist info...")
         try:
-            info = get_playlist_info(url)
+            info = get_playlist_info(options.url)
         except Exception as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
 
-    if show_info:
+    if show_info and not json_output:
         _print_playlist_info(info)
-
-    output_base = os.path.expanduser(output_base)
-    playlist_dir = os.path.join(output_base, info["title"])
-    print(f"Output: {playlist_dir}")
 
     if confirm and not prompt_bool("Start download?", default=True):
         print("Cancelled.")
         return 0
 
-    print(f"\nDownloading: {info['title']} ({info['total']} tracks)")
     try:
-        files = download_playlist(
-            url, playlist_dir,
-            fmt=fmt, template=template,
-            progress_callback=download_progress,
-            total=info["total"],
-        )
+        result = service.execute(options, progress=_progress_printer, info=info)
     except Exception as exc:
-        print(f"\nDownload failed: {exc}", file=sys.stderr)
+        print(f"\nError: {exc}", file=sys.stderr)
         return 1
 
-    print(f"\nDownloaded {len(files)}/{info['total']} tracks")
+    if json_output:
+        print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
+        return result.exit_code
 
-    if do_normalize and files:
-        print(f"\nNormalising volume (album mode, target: {loudness} LUFS)...")
-        try:
-            files = normalize_album(
-                files, target_loudness=loudness,
-                progress_callback=normalise_progress,
+    if options.list_tracks:
+        _print_tracks(result.info)
+    elif options.dry_run:
+        _print_planned(result.planned)
+    else:
+        print(f"\nDownloaded {len(result.files)}/{result.info['total']} tracks")
+        if result.download and result.download.failed:
+            print("Failed tracks:", file=sys.stderr)
+            for message in result.download.failed[:10]:
+                print(f"  - {message}", file=sys.stderr)
+        if result.normalization and result.normalization.normalized:
+            print(
+                "Normalised "
+                f"{len(result.normalization.normalized)} tracks "
+                f"({result.normalization.mode})"
             )
-        except Exception as exc:
-            print(f"\nNormalisation failed: {exc}", file=sys.stderr)
-            return 1
-        print()
+        print(f"\nDone! Saved to: {result.output_dir}")
+        print(f"Total: {len(result.files)} tracks")
+        if result.report_path:
+            print(f"Report: {result.report_path}")
+        if result.exit_code == 2:
+            print("Some tracks failed; see the report for details.",
+                  file=sys.stderr)
+    return result.exit_code
 
-    print(f"\nDone! Saved to: {playlist_dir}")
-    print(f"Total: {len(files)} tracks")
-    return 0
 
-
-def interactive():
+def interactive(defaults=None):
+    cfg = config.default_config()
+    cfg.update(defaults or {})
     print("=" * 50)
     print("  ytm-playlist-dl")
     print("  YouTube Music Playlist Downloader")
@@ -226,57 +396,73 @@ def interactive():
     print("Output format:")
     for key in FORMAT_CHOICES:
         print(f"  {key}: {FORMAT_DESCRIPTIONS[key]}")
-    fmt = prompt(
-        "Output format",
-        default=DEFAULT_FORMAT,
-        choices=FORMAT_CHOICES,
+    fmt = prompt("Output format", default=cfg["format"], choices=FORMAT_CHOICES)
+
+    template = select_template(cfg["template"])
+
+    normalize_mode = prompt(
+        "Normalise mode", default=cfg["normalize_mode"],
+        choices=NORMALIZE_MODES,
     )
 
-    template = select_template()
-
-    do_normalize = prompt_bool("Normalise volume (EBU R128 album mode)", default=True)
-
-    loudness = DEFAULT_LOUDNESS
-    if do_normalize:
+    loudness = cfg["loudness"]
+    if normalize_mode != "off":
         print("  Target loudness (LUFS):")
         print("    -14 = YouTube/Spotify 標準 (おすすめ)")
         print("    -16 = やや控えめ")
         print("    -23 = EBU R128 推奨値 (最も控えめ)")
         loudness = prompt_int(
-            "  Value",
-            default=DEFAULT_LOUDNESS,
-            min_val=LOUDNESS_MIN,
-            max_val=LOUDNESS_MAX,
+            "  Value", default=int(cfg["loudness"]),
+            min_val=LOUDNESS_MIN, max_val=LOUDNESS_MAX,
         )
 
-    output_base = prompt(
-        "Output directory",
-        default=DEFAULT_OUTPUT,
-    )
-
+    output_base = prompt("Output directory", default=cfg["output"])
     if not prompt_bool("Start download?", default=True):
         print("Cancelled.")
         return 0
 
-    return run(
-        url, fmt=fmt, template=template,
-        do_normalize=do_normalize, loudness=loudness,
-        output_base=output_base, info=info, confirm=False,
-        show_info=False,
-    )
+    options = RunOptions.from_mapping(cfg, url=url)
+    options.fmt = fmt
+    options.template = template
+    options.normalize_mode = normalize_mode
+    options.loudness = float(loudness)
+    options.output = output_base
+    return run(options, info=info, show_info=False)
+
+
+def _config_path_from_argv(argv):
+    for index, arg in enumerate(argv):
+        if arg == "--config" and index + 1 < len(argv):
+            return argv[index + 1]
+        if arg.startswith("--config="):
+            return arg.split("=", 1)[1]
+    return None
 
 
 def main(argv=None):
-    parser = build_parser()
+    argv = list(sys.argv[1:] if argv is None else argv)
+    cfg = config.default_config()
+    cfg.update(config.load_config(_config_path_from_argv(argv)))
+    parser = build_parser(cfg)
     args = parser.parse_args(argv)
+
+    if args.web:
+        from webui import run_server
+        return run_server(args.host, args.port, open_browser=args.open_browser)
+
+    options = _args_to_options(args)
+
+    if args.save_config:
+        saved = config.save_config(options.to_config(), args.config)
+        print(f"Saved config to: {saved}")
+
     try:
         if args.url:
             return run(
-                args.url, fmt=args.fmt, template=args.template,
-                do_normalize=not args.no_normalize,
-                loudness=args.loudness, output_base=args.output,
+                options, info=None, confirm=False, show_info=True,
+                json_output=args.json,
             )
-        return interactive()
+        return interactive(cfg)
     except KeyboardInterrupt:
         print("\nInterrupted.")
         return 1

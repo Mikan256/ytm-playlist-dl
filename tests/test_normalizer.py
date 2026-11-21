@@ -8,6 +8,7 @@ from unittest import mock
 
 import normalizer
 
+
 LOUDNORM_OUTPUT = """
 [Parsed_loudnorm_0 @ 0x1234] 
 {
@@ -138,6 +139,21 @@ class CodecAndFfmpegTests(unittest.TestCase):
             self.assertFalse(normalizer._apply_gain("in.xyz", "out.xyz", 1.0))
         run.assert_not_called()
 
+    def test_write_replaygain_tags_uses_stream_copy_and_metadata(self):
+        completed = mock.Mock(returncode=0)
+        with mock.patch.object(
+            normalizer.subprocess, "run", return_value=completed
+        ) as run:
+            ok = normalizer._write_replaygain_tags(
+                "in.flac", "out.flac",
+                {"REPLAYGAIN_TRACK_GAIN": "+1.00 dB"},
+            )
+
+        self.assertTrue(ok)
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[cmd.index("-c") + 1], "copy")
+        self.assertIn("REPLAYGAIN_TRACK_GAIN=+1.00 dB", cmd)
+
 
 class NormalizeAlbumTests(unittest.TestCase):
     def setUp(self):
@@ -174,7 +190,8 @@ class NormalizeAlbumTests(unittest.TestCase):
                         progress_callback=lambda *args: progress.append(args),
                     )
 
-        self.assertEqual(result, self.files)
+        self.assertEqual(result.files, self.files)
+        self.assertEqual(result.normalized, self.files)
         self.assertEqual(apply_gain.call_count, 2)
         for call in apply_gain.call_args_list:
             self.assertAlmostEqual(call.args[2], 6.0)
@@ -184,13 +201,66 @@ class NormalizeAlbumTests(unittest.TestCase):
             with open(path, "rb") as handle:
                 self.assertEqual(handle.read(), b"normalised")
 
+    def test_manifest_prevents_duplicate_normalisation(self):
+        with mock.patch.object(normalizer, "ensure_ffmpeg"):
+            with mock.patch.object(
+                normalizer, "_measure_loudness",
+                return_value={"input_i": -20.0, "duration": 100.0},
+            ):
+                with mock.patch.object(
+                    normalizer, "_apply_gain", return_value=True
+                ) as apply_gain:
+                    first = normalizer.normalize_album(self.files)
+                    second = normalizer.normalize_album(self.files)
+
+        self.assertEqual(len(first.normalized), 2)
+        self.assertEqual(apply_gain.call_count, 2)
+        self.assertEqual(second.normalized, [])
+        self.assertEqual(second.skipped, self.files)
+
+    def test_force_normalize_ignores_manifest(self):
+        with mock.patch.object(normalizer, "ensure_ffmpeg"):
+            with mock.patch.object(
+                normalizer, "_measure_loudness",
+                return_value={"input_i": -20.0, "duration": 100.0},
+            ):
+                with mock.patch.object(
+                    normalizer, "_apply_gain", return_value=True
+                ) as apply_gain:
+                    normalizer.normalize_album(self.files)
+                    forced = normalizer.normalize_album(self.files, force=True)
+
+        self.assertEqual(len(forced.normalized), 2)
+        self.assertEqual(apply_gain.call_count, 4)
+
+    def test_replaygain_mode_writes_tags_without_reencoding(self):
+        measurement = {"input_i": -20.0, "duration": 100.0, "input_tp": -3.0}
+        with mock.patch.object(normalizer, "ensure_ffmpeg"):
+            with mock.patch.object(
+                normalizer, "_measure_loudness", return_value=measurement
+            ):
+                with mock.patch.object(
+                    normalizer, "_write_replaygain_tags", return_value=True
+                ) as tags:
+                    result = normalizer.normalize_album(
+                        self.files, target_loudness=-14, mode="replaygain",
+                    )
+
+        self.assertEqual(result.mode, "replaygain")
+        self.assertEqual(result.normalized, self.files)
+        self.assertEqual(tags.call_count, 2)
+        written = tags.call_args.args[2]
+        self.assertEqual(written["REPLAYGAIN_TRACK_GAIN"], "+6.00 dB")
+        self.assertIn("REPLAYGAIN_ALBUM_GAIN", written)
+        self.assertIn("REPLAYGAIN_TRACK_PEAK", written)
+
     def test_skips_when_loudness_cannot_be_measured(self):
         with mock.patch.object(normalizer, "ensure_ffmpeg"):
             with mock.patch.object(normalizer, "_measure_loudness", return_value=None):
                 with mock.patch.object(normalizer, "_apply_gain") as apply_gain:
                     result = normalizer.normalize_album(self.files)
 
-        self.assertEqual(result, self.files)
+        self.assertEqual(result.files, self.files)
         apply_gain.assert_not_called()
 
     def test_failure_keeps_original_file(self):
@@ -204,10 +274,18 @@ class NormalizeAlbumTests(unittest.TestCase):
                 ):
                     result = normalizer.normalize_album(self.files)
 
-        self.assertEqual(result, self.files)
+        self.assertEqual(result.files, self.files)
+        self.assertEqual(result.failed, self.files)
         for path in self.files:
             with open(path, "rb") as handle:
                 self.assertEqual(handle.read(), b"audio")
+
+    def test_mode_off_does_nothing(self):
+        with mock.patch.object(normalizer, "ensure_ffmpeg") as ensure:
+            result = normalizer.normalize_album(self.files, mode="off")
+        ensure.assert_not_called()
+        self.assertEqual(result.mode, "off")
+        self.assertEqual(result.files, self.files)
 
     def test_ffmpeg_check_is_performed(self):
         with mock.patch.object(

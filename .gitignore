@@ -3,6 +3,18 @@ __pycache__/
 *.pyc
 .venv/
 downloads/
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+coverage.xml
+.coverage
+
+# Generated run output
+*.log
+reports/
 
 # Rust
 ytm-playlist-dl/target/

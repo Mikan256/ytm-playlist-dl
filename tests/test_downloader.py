@@ -74,6 +74,14 @@ class TemplateAndSortingTests(unittest.TestCase):
             downloader.build_output_template("/out", "num_artist_title"),
         )
 
+    def test_custom_template_overrides_named_template(self):
+        self.assertEqual(
+            downloader.build_output_template(
+                "/out", "num_title", "%(title)s.%(ext)s"
+            ),
+            os.path.join("/out", "%(title)s.%(ext)s"),
+        )
+
     def test_unknown_template_falls_back_to_default(self):
         self.assertEqual(
             downloader.build_output_template("/out", "unknown"),
@@ -158,15 +166,24 @@ class PlaylistInfoTests(unittest.TestCase):
             self.url = url
             return {
                 "title": "My: Playlist",
-                "entries": [{"id": "a"}, None, {"id": "b"}],
+                "entries": [
+                    {"id": "a", "title": "First", "url": "https://x/a",
+                     "duration": 60},
+                    None,
+                    {"id": "b", "title": "Second", "url": "https://x/b"},
+                ],
             }
 
-    def test_returns_sanitized_title_and_skips_empty_entries(self):
+    def test_returns_sanitized_title_entries_and_total(self):
         info = downloader.get_playlist_info(
             "https://music.youtube.com/playlist?list=PL123",
             ydl_factory=self.FakeYDL,
         )
-        self.assertEqual(info, {"title": "My Playlist", "total": 2})
+        self.assertEqual(info["title"], "My Playlist")
+        self.assertEqual(info["total"], 2)
+        self.assertEqual(info["url"], "https://youtube.com/playlist?list=PL123")
+        self.assertEqual([entry["index"] for entry in info["entries"]], [1, 2])
+        self.assertEqual(info["entries"][0]["title"], "First")
 
     def test_extract_errors_are_wrapped(self):
         class BrokenYDL(self.FakeYDL):
@@ -215,7 +232,6 @@ class DownloadPlaylistTests(unittest.TestCase):
                 return False
 
             def download(self, urls):
-                self.assert_url = urls
                 for index, title in ((1, "A"), (2, "B")):
                     path = os.path.join(self_dir, f"{index:02d}_{title}.flac")
                     with open(path, "w", encoding="utf-8") as handle:
@@ -228,7 +244,7 @@ class DownloadPlaylistTests(unittest.TestCase):
 
         self_dir = self.dir
         with self._fake_ytdlp(FakeYDL):
-            files = downloader.download_playlist(
+            result = downloader.download_playlist(
                 self.url, self.dir, fmt="flac", template="num_title",
                 progress_callback=lambda i, total, title: progress.append(
                     (i, total, title)
@@ -237,7 +253,7 @@ class DownloadPlaylistTests(unittest.TestCase):
             )
 
         self.assertEqual(
-            [os.path.basename(path) for path in files],
+            [os.path.basename(path) for path in result.files],
             ["01_A.flac", "02_B.flac"],
         )
         self.assertEqual(progress, [(1, 2, "A"), (2, 2, "B")])
@@ -247,6 +263,106 @@ class DownloadPlaylistTests(unittest.TestCase):
             options["postprocessors"][0]["preferredcodec"], "flac"
         )
         self.assertFalse(options["ignoreerrors"])
+        self.assertIsInstance(options["logger"], downloader._ErrorCollector)
+
+    def test_extended_options_are_forwarded(self):
+        captured = {}
+
+        class FakeYDL:
+            def __init__(self, opts):
+                captured.update(opts)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def download(self, urls):
+                open(os.path.join(self_dir, "01_A.mp3"), "w").close()
+
+        self_dir = self.dir
+        with self._fake_ytdlp(FakeYDL):
+            downloader.download_playlist(
+                self.url, self.dir, fmt="mp3", start=2, end=5,
+                keep_going=True, audio_quality="320",
+                embed_metadata=True, embed_thumbnail=True,
+                template_string="%(title)s.%(ext)s",
+                concurrent_fragments=4,
+            )
+
+        self.assertEqual(captured["playlist_items"], "2-5")
+        self.assertTrue(captured["ignoreerrors"])
+        self.assertTrue(captured["addmetadata"])
+        self.assertTrue(captured["writethumbnail"])
+        self.assertTrue(captured["embedthumbnail"])
+        self.assertEqual(captured["concurrent_fragment_downloads"], 4)
+        self.assertEqual(
+            captured["postprocessors"][0]["preferredquality"], "320"
+        )
+        self.assertEqual(captured["outtmpl"],
+                         os.path.join(self.dir, "%(title)s.%(ext)s"))
+
+    def test_keep_going_reports_failed_tracks(self):
+        class PartiallyBrokenYDL:
+            def __init__(self, opts):
+                self.opts = opts
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def download(self, urls):
+                open(os.path.join(self_dir, "01_A.flac"), "w").close()
+                self.opts["logger"].error("track 2 unavailable")
+
+        self_dir = self.dir
+        with self._fake_ytdlp(PartiallyBrokenYDL):
+            result = downloader.download_playlist(
+                self.url, self.dir, keep_going=True,
+            )
+
+        self.assertEqual(len(result.files), 1)
+        self.assertEqual(result.failed, ["track 2 unavailable"])
+
+    def test_parallel_jobs_download_each_selected_track(self):
+        seen = []
+        lock = __import__("threading").Lock()
+
+        class ParallelYDL:
+            def __init__(self, opts):
+                self.opts = opts
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def download(self, urls):
+                index = int(self.opts["playlist_items"])
+                with lock:
+                    seen.append(index)
+                path = os.path.join(self_dir, f"{index:02d}_Track{index}.flac")
+                open(path, "w").close()
+                hook = self.opts.get("progress_hooks", [None])[0]
+                if hook:
+                    hook({"status": "finished", "info_dict": {
+                        "playlist_index": index, "title": f"Track{index}"}})
+
+        self_dir = self.dir
+        with self._fake_ytdlp(ParallelYDL):
+            result = downloader.download_playlist(
+                self.url, self.dir, total=3, jobs=3,
+            )
+
+        self.assertEqual(sorted(seen), [1, 2, 3])
+        self.assertEqual(
+            [os.path.basename(path) for path in result.files],
+            ["01_Track1.flac", "02_Track2.flac", "03_Track3.flac"],
+        )
 
     def test_retries_after_failure_then_succeeds(self):
         attempts = {"count": 0}
@@ -271,13 +387,13 @@ class DownloadPlaylistTests(unittest.TestCase):
 
         self_dir = self.dir
         with self._fake_ytdlp(FlakyYDL):
-            files = downloader.download_playlist(
+            result = downloader.download_playlist(
                 self.url, self.dir, retries=2, sleep=sleeps.append,
             )
 
         self.assertEqual(attempts["count"], 2)
         self.assertEqual(len(sleeps), 1)
-        self.assertEqual(len(files), 1)
+        self.assertEqual(len(result.files), 1)
 
     def test_raises_after_all_retries_fail(self):
         class BrokenYDL:

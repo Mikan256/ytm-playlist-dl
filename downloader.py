@@ -1,9 +1,12 @@
 import os
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from config import AUDIO_EXTENSIONS
+from models import DownloadResult
 
 TEMPLATE_MAP = {
     "num_title": "%(playlist_index)02d_%(title)s.%(ext)s",
@@ -13,6 +16,25 @@ FORMAT_EXTENSIONS = {"flac": ".flac", "mp3": ".mp3", "original": None}
 
 _INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _PARTIAL_SUFFIX = re.compile(r"\.part(?:-Frag\d+)?$")
+
+
+class _ErrorCollector:
+    """yt-dlp logger that keeps error messages for partial-failure reports."""
+
+    def __init__(self):
+        self.errors = []
+
+    def debug(self, message):
+        pass
+
+    def info(self, message):
+        pass
+
+    def warning(self, message):
+        pass
+
+    def error(self, message):
+        self.errors.append(str(message).strip())
 
 
 def _is_partial_filename(name):
@@ -41,7 +63,7 @@ def normalise_url(url):
     """Return a canonical youtube.com playlist URL.
 
     Extra query parameters (radio, tracking, timestamps, ...) are discarded so
-    that yt-dlp always receives just the playlist id.
+    that yt-dlp always receives just the playlist id (and video id for /watch).
     """
     if not url or not str(url).strip():
         raise ValueError("Playlist URL is required")
@@ -53,7 +75,7 @@ def normalise_url(url):
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
     video_id = None
-    if host == "music.youtube.com" or host == "m.youtube.com":
+    if host in {"music.youtube.com", "m.youtube.com"}:
         host = "youtube.com"
     elif host == "www.youtube.com":
         host = "youtube.com"
@@ -103,16 +125,31 @@ def get_playlist_info(url, ydl_factory=None):
     if not info:
         raise RuntimeError("Failed to get playlist info: empty response")
 
-    entries = info.get("entries") or []
-    total = sum(1 for entry in entries if entry)
+    entries = []
+    for entry in info.get("entries") or []:
+        if not entry:
+            continue
+        index = entry.get("playlist_index") or len(entries) + 1
+        entries.append({
+            "index": index,
+            "id": entry.get("id"),
+            "title": sanitize(entry.get("title") or "Unknown"),
+            "url": entry.get("url") or entry.get("webpage_url"),
+            "duration": entry.get("duration"),
+        })
+
     return {
         "title": sanitize(info.get("title") or "Unknown"),
-        "total": total,
+        "total": len(entries),
+        "url": url,
+        "entries": entries,
     }
 
 
-def build_output_template(output_dir, template):
-    template_string = TEMPLATE_MAP.get(template, TEMPLATE_MAP["num_title"])
+def build_output_template(output_dir, template, template_string=None):
+    template_string = template_string or TEMPLATE_MAP.get(
+        template, TEMPLATE_MAP["num_title"]
+    )
     return os.path.join(output_dir, template_string)
 
 
@@ -136,12 +173,7 @@ def cleanup_partial_files(output_dir):
 
 
 def collect_output_files(output_dir, fmt="flac"):
-    """Collect downloaded audio files in playlist order.
-
-    Only real files are returned: partial downloads, thumbnails and other
-    sidecar files are ignored. This also fixes the old lexicographic ordering
-    (100_... used to sort before 11_...).
-    """
+    """Collect downloaded audio files in playlist order."""
     if fmt not in FORMAT_EXTENSIONS:
         raise ValueError(f"Unknown output format: {fmt}")
 
@@ -164,71 +196,202 @@ def collect_output_files(output_dir, fmt="flac"):
     return sorted(files, key=lambda path: natural_sort_key(os.path.basename(path)))
 
 
-def download_playlist(url, output_dir, fmt="flac", template="num_title",
-                      progress_callback=None, total=None, retries=3, sleep=None):
-    if fmt not in FORMAT_EXTENSIONS:
-        raise ValueError(f"Unknown output format: {fmt}")
+def _playlist_items(start, end):
+    if start is None and end is None:
+        return None
+    start = 1 if start is None else start
+    if end is None:
+        return f"{start}:"
+    if start == end:
+        return str(start)
+    return f"{start}-{end}"
 
-    url = normalise_url(url)
-    os.makedirs(output_dir, exist_ok=True)
-    cleanup_partial_files(output_dir)
 
-    codec_map = {"flac": "flac", "mp3": "mp3"}
-    preferredcodec = codec_map.get(fmt)
+def _postprocessors(fmt, audio_quality):
+    if fmt not in {"flac", "mp3"}:
+        return []
+    postprocessor = {
+        "key": "FFmpegExtractAudio",
+        "preferredcodec": fmt,
+    }
+    if fmt == "mp3" and audio_quality:
+        postprocessor["preferredquality"] = str(audio_quality)
+    return [postprocessor]
 
-    ydl_opts = {
+
+def _build_ydl_opts(output_dir, fmt, template, template_string, start, end,
+                    keep_going, audio_quality, embed_metadata, embed_thumbnail,
+                    concurrent_fragments, retries, logger):
+    opts = {
         "format": "bestaudio/best",
-        "outtmpl": build_output_template(output_dir, template),
+        "outtmpl": build_output_template(output_dir, template, template_string),
         "quiet": True,
         "noprogress": True,
         "no_warnings": True,
-        "ignoreerrors": False,
-        "embedmetadata": True,
+        "ignoreerrors": bool(keep_going),
         "retries": retries,
         "fragment_retries": retries,
+        "concurrent_fragment_downloads": concurrent_fragments,
+        "logger": logger,
     }
+    items = _playlist_items(start, end)
+    if items:
+        opts["playlist_items"] = items
+    if embed_metadata:
+        opts["addmetadata"] = True
+    if embed_thumbnail:
+        opts["writethumbnail"] = True
+        opts["embedthumbnail"] = True
+    postprocessors = _postprocessors(fmt, audio_quality)
+    if postprocessors:
+        opts["postprocessors"] = postprocessors
+    return opts
 
-    downloaded = {"count": 0}
 
-    if progress_callback:
-        def hook(data):
-            if data.get("status") != "finished":
-                return
+def _make_hook(progress_callback, downloaded, total, lock):
+    if not progress_callback:
+        return None
+
+    def hook(data):
+        if data.get("status") != "finished":
+            return
+        info = data.get("info_dict") or {}
+        with lock:
             downloaded["count"] += 1
-            info = data.get("info_dict") or {}
-            index = info.get("playlist_index") or downloaded["count"]
-            total_count = total or info.get("playlist_count") or downloaded["count"]
-            progress_callback(index, total_count, info.get("title") or "Unknown")
+            count = downloaded["count"]
+        index = info.get("playlist_index") or count
+        total_count = total or info.get("playlist_count") or count
+        progress_callback(index, total_count, info.get("title") or "Unknown")
 
-        ydl_opts["progress_hooks"] = [hook]
+    return hook
 
-    if preferredcodec:
-        ydl_opts["postprocessors"] = [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": preferredcodec,
-        }]
 
-    ydl_cls = _load_yt_dlp().YoutubeDL
-    pause = sleep if sleep is not None else time.sleep
-    retries = max(1, int(retries))
+def _download_once(ydl_cls, opts, url):
+    with ydl_cls(opts) as ydl:
+        return ydl.download([url])
+
+
+def _download_serial(ydl_cls, opts, url, retries, pause, keep_going):
     last_error = None
     for attempt in range(1, retries + 1):
         try:
-            with ydl_cls(ydl_opts) as ydl:
-                ydl.download([url])
-            last_error = None
-            break
+            retcode = _download_once(ydl_cls, opts, url)
+            if retcode not in (0, None) and not keep_going:
+                raise RuntimeError(f"yt-dlp returned exit code {retcode}")
+            return
         except Exception as exc:
             last_error = exc
             if attempt < retries:
                 pause(min(2 ** (attempt - 1), 10))
+    raise RuntimeError(
+        f"Download failed after {retries} attempts: {last_error}"
+    ) from last_error
 
-    if last_error is not None:
-        raise RuntimeError(
-            f"Download failed after {retries} attempts: {last_error}"
-        ) from last_error
+
+def _download_parallel(ydl_cls, base_opts, url, total, jobs, start, end,
+                       retries, pause, keep_going, progress_callback,
+                       collector):
+    first = start or 1
+    last = end or total
+    if not last:
+        raise ValueError("Cannot run parallel jobs without a known track count")
+    indices = list(range(first, last + 1))
+    downloaded = {"count": 0}
+    lock = threading.Lock()
+
+    def worker(index):
+        opts = dict(base_opts)
+        opts["playlist_items"] = str(index)
+        local = _ErrorCollector()
+        opts["logger"] = local
+        hook = _make_hook(progress_callback, downloaded, total, lock)
+        if hook:
+            opts["progress_hooks"] = [hook]
+        try:
+            _download_serial(
+                ydl_cls, opts, url, retries, pause, keep_going=True
+            )
+        except Exception as exc:
+            local.error(str(exc))
+        return local.errors
+
+    errors = []
+    with ThreadPoolExecutor(max_workers=jobs) as executor:
+        futures = [executor.submit(worker, index) for index in indices]
+        for future in as_completed(futures):
+            errors.extend(future.result())
+
+    if errors:
+        with lock:
+            collector.errors.extend(errors)
+        if not keep_going:
+            raise RuntimeError(
+                "Download failed for "
+                f"{len(errors)} track(s): {errors[0]}"
+            )
+
+
+def download_playlist(url, output_dir, fmt="flac", template="num_title",
+                      progress_callback=None, total=None, retries=3, sleep=None,
+                      *, start=None, end=None, keep_going=False,
+                      template_string=None, audio_quality=None,
+                      embed_metadata=False, embed_thumbnail=False,
+                      concurrent_fragments=1, jobs=1):
+    if fmt not in FORMAT_EXTENSIONS:
+        raise ValueError(f"Unknown output format: {fmt}")
+
+    url = normalise_url(url)
+    retries = max(1, int(retries))
+    jobs = max(1, int(jobs))
+    concurrent_fragments = max(1, int(concurrent_fragments))
+    os.makedirs(output_dir, exist_ok=True)
+    cleanup_partial_files(output_dir)
+    existing = set(collect_output_files(output_dir, fmt))
+
+    collector = _ErrorCollector()
+    ydl_opts = _build_ydl_opts(
+        output_dir, fmt, template, template_string, start, end,
+        keep_going, audio_quality, embed_metadata, embed_thumbnail,
+        concurrent_fragments, retries, collector,
+    )
+
+    downloaded = {"count": 0}
+    lock = threading.Lock()
+    hook = _make_hook(progress_callback, downloaded, total, lock)
+    if hook:
+        ydl_opts["progress_hooks"] = [hook]
+
+    ydl_cls = _load_yt_dlp().YoutubeDL
+    pause = sleep if sleep is not None else time.sleep
+
+    if jobs > 1:
+        if total is None:
+            total = get_playlist_info(url)["total"]
+        _download_parallel(
+            ydl_cls, ydl_opts, url, total, jobs, start, end,
+            retries, pause, keep_going, progress_callback, collector,
+        )
+    else:
+        try:
+            _download_serial(
+                ydl_cls, ydl_opts, url, retries, pause, keep_going
+            )
+        except Exception as exc:
+            if not keep_going:
+                raise
+            collector.errors.append(str(exc))
 
     files = collect_output_files(output_dir, fmt)
-    if not files:
+    failed = list(dict.fromkeys(collector.errors))
+    if not files and not (keep_going and failed):
         raise RuntimeError("Download finished but no tracks were saved")
-    return files
+    if failed and not keep_going:
+        raise RuntimeError(f"Download failed: {failed[0]}")
+
+    skipped = [path for path in files if path in existing]
+    return DownloadResult(
+        files=files,
+        failed=failed,
+        total=total or len(files),
+        skipped=skipped,
+    )

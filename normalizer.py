@@ -5,6 +5,9 @@ import shutil
 import subprocess
 import tempfile
 
+from manifest import Manifest, manifest_path_for_files
+from models import NormalizationResult
+
 # Extensions that can be re-encoded while applying the album gain. Using
 # "-c:a copy" together with an audio filter is rejected by ffmpeg, so common
 # "original" formats must be mapped to an encoder instead.
@@ -158,60 +161,231 @@ def _apply_gain(input_path, output_path, gain_db, codec=None):
     return result.returncode == 0
 
 
-def normalize_album(files, target_loudness=-14, progress_callback=None):
+def _write_replaygain_tags(input_path, output_path, tags):
+    cmd = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-i", input_path, "-map_metadata", "0", "-c", "copy",
+    ]
+    for key, value in tags.items():
+        cmd.extend(["-metadata", f"{key}={value}"])
+    cmd.append(output_path)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except OSError:
+        return False
+    return result.returncode == 0
+
+
+def _replace_with_output(filepath, writer):
+    suffix = os.path.splitext(filepath)[1]
+    fd, tmp_path = tempfile.mkstemp(
+        suffix=suffix, dir=os.path.dirname(os.path.abspath(filepath))
+    )
+    os.close(fd)
+    try:
+        if writer(tmp_path):
+            os.replace(tmp_path, filepath)
+            return True
+        return False
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+def _manifest_for(files, manifest_path):
+    return Manifest(manifest_path or manifest_path_for_files(files))
+
+
+def _split_by_manifest(files, manifest, force, mode, target_loudness):
+    if force:
+        return list(files), []
+    skipped = []
+    pending = []
+    for filepath in files:
+        if manifest.is_current(filepath, mode, target_loudness):
+            skipped.append(filepath)
+        else:
+            pending.append(filepath)
+    return pending, skipped
+
+
+def _save_manifest(manifest):
+    try:
+        manifest.save()
+    except OSError as exc:
+        print(f"  Warning: could not save normalisation manifest: {exc}")
+
+
+def _progress(callback, current, total, filepath, phase):
+    if callback:
+        callback(
+            current, total, os.path.basename(filepath).rsplit(".", 1)[0], phase
+        )
+
+
+def normalize_album(files, target_loudness=-14, progress_callback=None,
+                    force=False, manifest_path=None, mode="album"):
+    if mode == "off":
+        return NormalizationResult(files=list(files), mode="off")
+    if mode == "replaygain":
+        return normalize_replaygain(
+            files, target_loudness=target_loudness,
+            progress_callback=progress_callback, force=force,
+            manifest_path=manifest_path,
+        )
+    if mode != "album":
+        raise ValueError(f"Unknown normalisation mode: {mode}")
+
+    files = list(files)
     total = len(files)
     if total == 0:
-        return files
+        return NormalizationResult(files=[], mode="album")
+
+    manifest = _manifest_for(files, manifest_path)
+    pending, skipped = _split_by_manifest(
+        files, manifest, force, "album", target_loudness
+    )
+    if not pending:
+        print(f"  Normalisation already applied to {total} tracks, skipping")
+        return NormalizationResult(
+            files=files, skipped=skipped, mode="album"
+        )
 
     ensure_ffmpeg()
 
-    print(f"  Analysing loudness across {total} tracks...")
+    previous_gain = None
+    for filepath in skipped:
+        previous_gain = manifest.gain_for(filepath, "album", target_loudness)
+        if previous_gain is not None:
+            break
+
+    measure_files = pending if previous_gain is not None else files
+    print(f"  Analysing loudness across {len(measure_files)} tracks...")
     measurements = []
-    for i, filepath in enumerate(files):
-        if progress_callback:
-            progress_callback(
-                i + 1, total, os.path.basename(filepath).rsplit(".", 1)[0],
-                "analysing",
-            )
+    for i, filepath in enumerate(measure_files):
+        _progress(progress_callback, i + 1, len(measure_files), filepath,
+                  "analysing")
         measurement = _measure_loudness(filepath)
         if measurement:
             measurements.append(measurement)
 
     album_i = compute_album_loudness(measurements)
-    if album_i is None:
+    if previous_gain is not None:
+        gain = previous_gain
+    elif album_i is None:
         print("  Warning: could not measure loudness, skipping normalisation")
-        return files
-
-    gain = target_loudness - album_i
-    print(f"  Album integrated loudness: {album_i:+.1f} LUFS")
+        return NormalizationResult(files=files, skipped=skipped, mode="album")
+    else:
+        gain = target_loudness - album_i
+        print(f"  Album integrated loudness: {album_i:+.1f} LUFS")
     print(f"  Applying uniform gain: {gain:+.1f} dB")
 
-    output_files = []
-    for i, filepath in enumerate(files):
-        if progress_callback:
-            progress_callback(
-                i + 1, total, os.path.basename(filepath).rsplit(".", 1)[0],
-                "normalising",
+    normalized = []
+    failed = []
+    for i, filepath in enumerate(pending):
+        _progress(progress_callback, i + 1, len(pending), filepath,
+                  "normalising")
+        if _replace_with_output(
+            filepath, lambda output, src=filepath: _apply_gain(src, output, gain)
+        ):
+            normalized.append(filepath)
+            manifest.mark(filepath, "album", target_loudness, gain)
+        else:
+            print(
+                "  Warning: failed to normalise "
+                f"{os.path.basename(filepath)}, skipping"
             )
+            failed.append(filepath)
 
-        suffix = os.path.splitext(filepath)[1]
-        fd, tmp_path = tempfile.mkstemp(
-            suffix=suffix, dir=os.path.dirname(os.path.abspath(filepath))
+    _save_manifest(manifest)
+    return NormalizationResult(
+        files=files,
+        normalized=normalized,
+        skipped=skipped,
+        failed=failed,
+        album_loudness=album_i,
+        gain_db=gain,
+        mode="album",
+    )
+
+
+def normalize_replaygain(files, target_loudness=-14, progress_callback=None,
+                         force=False, manifest_path=None):
+    files = list(files)
+    total = len(files)
+    if total == 0:
+        return NormalizationResult(files=[], mode="replaygain")
+
+    manifest = _manifest_for(files, manifest_path)
+    pending, skipped = _split_by_manifest(
+        files, manifest, force, "replaygain", target_loudness
+    )
+    if not pending:
+        print(f"  ReplayGain tags already applied to {total} tracks, skipping")
+        return NormalizationResult(
+            files=files, skipped=skipped, mode="replaygain"
         )
-        os.close(fd)
-        try:
-            ok = _apply_gain(filepath, tmp_path, gain)
-            if ok:
-                os.replace(tmp_path, filepath)
-                output_files.append(filepath)
-            else:
-                print(
-                    "  Warning: failed to normalise "
-                    f"{os.path.basename(filepath)}, skipping"
-                )
-                output_files.append(filepath)
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
 
-    return output_files
+    ensure_ffmpeg()
+
+    print(f"  Analysing loudness for ReplayGain across {len(pending)} tracks...")
+    measurements = {}
+    for i, filepath in enumerate(pending):
+        _progress(progress_callback, i + 1, len(pending), filepath,
+                  "analysing")
+        measurement = _measure_loudness(filepath)
+        if measurement:
+            measurements[filepath] = measurement
+
+    album_i = compute_album_loudness(list(measurements.values()))
+    album_gain = target_loudness - album_i if album_i is not None else 0.0
+    peaks = [
+        10 ** (m["input_tp"] / 20)
+        for m in measurements.values()
+    ]
+    album_peak = max(peaks) if peaks else 1.0
+
+    normalized = []
+    failed = []
+    for i, filepath in enumerate(pending):
+        _progress(progress_callback, i + 1, len(pending), filepath,
+                  "normalising")
+        measurement = measurements.get(filepath)
+        if measurement is None:
+            failed.append(filepath)
+            continue
+        track_gain = target_loudness - measurement["input_i"]
+        track_peak = 10 ** (measurement["input_tp"] / 20)
+        tags = {
+            "REPLAYGAIN_TRACK_GAIN": f"{track_gain:+.2f} dB",
+            "REPLAYGAIN_TRACK_PEAK": f"{track_peak:.6f}",
+            "REPLAYGAIN_ALBUM_GAIN": f"{album_gain:+.2f} dB",
+            "REPLAYGAIN_ALBUM_PEAK": f"{album_peak:.6f}",
+        }
+        ok = _replace_with_output(
+            filepath,
+            lambda output, src=filepath, values=tags:
+                _write_replaygain_tags(src, output, values),
+        )
+        if ok:
+            normalized.append(filepath)
+            manifest.mark(
+                filepath, "replaygain", target_loudness, track_gain
+            )
+        else:
+            print(
+                "  Warning: failed to write ReplayGain tags for "
+                f"{os.path.basename(filepath)}, skipping"
+            )
+            failed.append(filepath)
+
+    _save_manifest(manifest)
+    return NormalizationResult(
+        files=files,
+        normalized=normalized,
+        skipped=skipped,
+        failed=failed,
+        album_loudness=album_i,
+        gain_db=album_gain,
+        mode="replaygain",
+    )

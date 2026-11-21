@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ytm-playlist-dl</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">♪</span>
+      <div>
+        <h1>ytm-playlist-dl</h1>
+        <p>YouTube Music プレイリストを連番保存・音量統一</p>
+      </div>
+    </div>
+    <span id="server-status" class="badge idle">待機中</span>
+  </header>
+
+  <main class="layout">
+    <section class="panel form-panel">
+      <form id="download-form">
+        <div class="field url-field">
+          <label for="url">プレイリストURL</label>
+          <div class="input-row">
+            <input id="url" name="url" type="url" required
+                   placeholder="https://music.youtube.com/playlist?list=...">
+            <button type="button" id="info-button" class="secondary">情報取得</button>
+          </div>
+        </div>
+
+        <div id="playlist-card" class="playlist-card hidden">
+          <div class="playlist-head">
+            <h2 id="playlist-title">-</h2>
+            <span id="playlist-count" class="pill">0曲</span>
+          </div>
+          <div id="track-list" class="track-list"></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="fmt">出力形式</label>
+            <select id="fmt" name="fmt"></select>
+          </div>
+          <div class="field">
+            <label for="template">ファイル名</label>
+            <select id="template" name="template"></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="template_string">カスタムテンプレート <small>（任意・yt-dlp形式）</small></label>
+          <input id="template_string" name="template_string" type="text"
+                 placeholder="%(playlist_index)02d_%(artist)s_%(title)s.%(ext)s">
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="normalize_mode">音量処理</label>
+            <select id="normalize_mode" name="normalize_mode"></select>
+          </div>
+          <div class="field">
+            <label for="loudness">ターゲット <small>LUFS</small></label>
+            <input id="loudness" name="loudness" type="number"
+                   min="-30" max="-5" step="0.1" value="-14">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="output">出力先ディレクトリ</label>
+          <input id="output" name="output" type="text" value="./downloads">
+        </div>
+
+        <div class="grid-3">
+          <div class="field">
+            <label for="start">開始曲</label>
+            <input id="start" name="start" type="number" min="1" placeholder="1">
+          </div>
+          <div class="field">
+            <label for="end">終了曲</label>
+            <input id="end" name="end" type="number" min="1" placeholder="最後">
+          </div>
+          <div class="field">
+            <label for="audio_quality">MP3品質 <small>kbps</small></label>
+            <input id="audio_quality" name="audio_quality" type="text"
+                   placeholder="192 / 320">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="jobs">並列トラック数</label>
+            <input id="jobs" name="jobs" type="number" min="1" max="8" value="1">
+          </div>
+          <div class="field">
+            <label for="concurrent_fragments">並列フラグメント</label>
+            <input id="concurrent_fragments" name="concurrent_fragments"
+                   type="number" min="1" max="16" value="1">
+          </div>
+        </div>
+
+        <fieldset class="checks">
+          <label><input id="keep_going" name="keep_going" type="checkbox">
+            失敗した曲を飛ばして続行</label>
+          <label><input id="force_normalize" name="force_normalize" type="checkbox">
+            正規化済みでも再実行</label>
+          <label><input id="embed_metadata" name="embed_metadata" type="checkbox">
+            メタデータを埋め込む</label>
+          <label><input id="embed_thumbnail" name="embed_thumbnail" type="checkbox">
+            カバーアートを埋め込む</label>
+        </fieldset>
+
+        <div class="actions">
+          <button type="submit" id="start-button" class="primary">ダウンロード開始</button>
+          <button type="button" id="dry-run-button" class="secondary">ドライラン</button>
+          <button type="button" id="save-config-button" class="ghost">設定を保存</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel result-panel">
+      <div class="result-head">
+        <h2>実行状況</h2>
+        <span id="job-status" class="badge idle">未実行</span>
+      </div>
+
+      <div class="progress-wrap">
+        <div id="progress-bar" class="progress-bar" style="width:0%"></div>
+      </div>
+      <p id="progress-label" class="muted">ダウンロードを開始するとここに進捗が表示されます。</p>
+
+      <div id="summary" class="summary hidden"></div>
+
+      <div class="log-head">
+        <h3>ログ</h3>
+        <button type="button" id="clear-log" class="ghost small">クリア</button>
+      </div>
+      <ol id="log" class="log"></ol>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <footer>
+    <span>ローカル専用UI · 127.0.0.1</span>
+    <span id="config-path" class="muted"></span>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
