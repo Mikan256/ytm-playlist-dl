@@ -3,8 +3,14 @@
 package main
 
 import (
+	"context"
 	_ "embed"
+	"errors"
+	"fmt"
 	"log"
+	"net"
+	"net/http"
+	"time"
 
 	"github.com/Mikan256/ytm-playlist-dl/internal/webui"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -18,19 +24,32 @@ func main() {
 		log.Fatal(err)
 	}
 
-	desktop := &desktopHandler{}
+	desktop := &desktopHandler{base: webui.NewHandler(webui.NewJobManager(nil))}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	server := &http.Server{Handler: desktop}
+	go func() {
+		if err := server.Serve(listener); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			log.Printf("local web server: %v", err)
+		}
+	}()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+	}()
+
 	app := application.New(application.Options{
 		Name:        "ytm-playlist-dl",
 		Description: "YouTube Music playlist and video downloader",
-		Assets: application.AssetOptions{
-			Handler: desktop,
-		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
 	desktop.app = app
-	desktop.base = webui.NewHandler(webui.NewJobManager(nil))
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:              "ytm-playlist-dl",
@@ -39,7 +58,7 @@ func main() {
 		MinWidth:           900,
 		MinHeight:          620,
 		BackgroundColour:   application.NewRGB(242, 230, 210),
-		URL:                "http://wails.localhost/",
+		URL:                fmt.Sprintf("http://%s/", listener.Addr().String()),
 		UseApplicationMenu: true,
 	})
 	desktop.window = window

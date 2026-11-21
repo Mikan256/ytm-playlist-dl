@@ -88,6 +88,9 @@ jobs:
       - name: Create checksums
         run: |
           cd release
+          if [[ -d release-assets ]]; then cp release-assets/* .; fi
+          if [[ -d dist ]]; then cp dist/* .; fi
+          rm -rf release-assets dist
           sha256sum ytm-playlist-dl-desktop-* > SHA256SUMS
           cat SHA256SUMS
       - name: Publish GitHub Release
