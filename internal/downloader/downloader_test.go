@@ -191,6 +191,32 @@ func TestBuildArgsIncludesFfmpegLocation(t *testing.T) {
 	}
 }
 
+func TestResolveFFmpegFromEnvironment(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture")
+	}
+	dir := t.TempDir()
+	ffmpeg := testutil.WriteExecutable(t, dir, "ffmpeg", "#!/bin/sh\nexit 0\n")
+	t.Setenv("FFMPEG_PATH", ffmpeg)
+	options := resolveFFmpeg(testOptions(t.TempDir()))
+	if options.FFmpegPath != ffmpeg {
+		t.Fatalf("ffmpeg path = %q, want %q", options.FFmpegPath, ffmpeg)
+	}
+	args := (&Downloader{}).buildArgs(
+		options, "/tmp/out/%(title)s.%(ext)s", "", "https://youtube.com/watch?v=a",
+	)
+	found := false
+	for index, arg := range args {
+		if arg == "--ffmpeg-location" && index+1 < len(args) &&
+			args[index+1] == ffmpeg {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("--ffmpeg-location missing from %v", args)
+	}
+}
+
 func TestDownloadSerial(t *testing.T) {
 	client := fakeDownloaderClient(t, fakeDownloader)
 	dir := t.TempDir()

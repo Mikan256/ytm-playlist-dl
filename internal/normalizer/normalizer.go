@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/Mikan256/ytm-playlist-dl/internal/binmgr"
 	"github.com/Mikan256/ytm-playlist-dl/internal/manifest"
 	"github.com/Mikan256/ytm-playlist-dl/internal/model"
 )
@@ -33,31 +34,19 @@ type Processor struct {
 }
 
 func New(ffmpegPath string) (*Processor, error) {
-	ffmpeg := ffmpegPath
-	if ffmpeg == "" {
-		found, err := exec.LookPath("ffmpeg")
-		if err != nil {
-			return nil, errors.New(
-				"ffmpeg/ffprobe not found. Install ffmpeg and make sure it is on PATH",
-			)
-		}
-		ffmpeg = found
+	ffmpeg, err := binmgr.Resolve(binmgr.FFmpeg, ffmpegPath)
+	if err != nil {
+		return nil, err
 	}
 	probe := ""
-	if ffmpegPath != "" {
-		candidate := filepath.Join(filepath.Dir(ffmpegPath), "ffprobe")
-		if _, err := os.Stat(candidate); err == nil {
-			probe = candidate
-		}
+	if sibling, ok := binmgr.Sibling(ffmpeg, binmgr.FFprobe); ok {
+		probe = sibling
 	}
 	if probe == "" {
-		found, err := exec.LookPath("ffprobe")
+		probe, err = binmgr.Resolve(binmgr.FFprobe, "")
 		if err != nil {
-			return nil, errors.New(
-				"ffmpeg/ffprobe not found. Install ffmpeg and make sure it is on PATH",
-			)
+			return nil, err
 		}
-		probe = found
 	}
 	return &Processor{FFmpeg: ffmpeg, FFprobe: probe}, nil
 }

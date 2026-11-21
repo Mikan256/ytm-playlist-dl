@@ -19,13 +19,16 @@ EBU R128 のアルバムモードで音量を統一する Go 製 CLI / Web UI �
 - `--dry-run` / `--list-tracks`
 - JSON 設定、JSON レポート、テキストログ
 - ブラウザ UI（レトロな紙面風デザイン、静的ファイルをバイナリに埋め込み）
-- 単一バイナリで配布可能
+- yt-dlp / ffmpeg を同梱したポータブル配布が可能
 
 ## 必要環境
 
-- Go 1.22+
+- Go 1.22+（ビルドする場合）
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) のスタンドアロンバイナリ
 - ffmpeg / ffprobe（音量処理・メタデータ埋め込みを使う場合）
+
+同梱バンドル版は yt-dlp / ffmpeg / ffprobe をすべて含むため、
+これらを別途インストールする必要はありません。
 
 Go 版は `yt-dlp` をサブプロセスとして実行します。Python ランタイムは不要です。
 
@@ -42,6 +45,81 @@ go build -o ytm-playlist-dl-web ./cmd/ytm-playlist-dl-web
 go install github.com/Mikan256/ytm-playlist-dl/cmd/ytm-playlist-dl@latest
 go install github.com/Mikan256/ytm-playlist-dl/cmd/ytm-playlist-dl-web@latest
 ```
+
+## ポータブル配布（yt-dlp / ffmpeg 同梱）
+
+`scripts/build-bundle.sh` を使うと、yt-dlp / ffmpeg / ffprobe を同梱した
+配布用アーカイブを作成できます。受け取った側は展開して実行するだけで、
+別途 yt-dlp や ffmpeg をインストールする必要はありません。
+
+```bash
+# 現在の OS / CPU 向け
+scripts/build-bundle.sh
+
+# Linux ARM64 向け
+scripts/build-bundle.sh --os linux --arch arm64
+
+# ローカルのバイナリを使う場合（オフライン環境など）
+scripts/build-bundle.sh \
+  --yt-dlp ./yt-dlp \
+  --ffmpeg ./ffmpeg \
+  --ffprobe ./ffprobe
+```
+
+生成物:
+
+```text
+dist/
+├── ytm-playlist-dl-0.4.1-linux-amd64.tar.gz
+├── ytm-playlist-dl-0.4.1-windows-amd64.zip
+└── ...
+```
+
+展開後の構成:
+
+```text
+ytm-playlist-dl-linux-amd64/
+├── ytm-playlist-dl
+├── ytm-playlist-dl-web
+├── bin/
+│   ├── yt-dlp
+│   ├── ffmpeg
+│   └── ffprobe
+├── LICENSES/
+├── README.md
+├── SPEC.md
+└── THIRD_PARTY_NOTICES.md
+```
+
+対応ターゲット:
+
+- Linux amd64 / arm64
+- macOS amd64 / arm64
+- Windows amd64
+
+### バイナリの探索順
+
+同梱バイナリは次の順で自動探索されます。
+
+1. `--yt-dlp PATH` / `--ffmpeg PATH`
+2. `YTDLP_PATH` / `FFMPEG_PATH` / `FFPROBE_PATH`
+3. 実行ファイルと同じディレクトリ
+4. 実行ファイル隣の `bin/` ディレクトリ
+5. カレントディレクトリと `./bin/`
+6. `PATH`
+
+そのため、アーカイブ内の `ytm-playlist-dl` を直接実行すれば、
+`bin/` の yt-dlp / ffmpeg が使われます。PATH を空にしても動作します。
+
+### 注意
+
+- 同梱しても、ダウンロードにはネットワーク接続が必要です。
+- YouTube 側の変更で yt-dlp の更新が必要になることがあります。
+  その場合は `bin/yt-dlp` を新しいものに差し替えるか、`--yt-dlp PATH` を指定してください。
+- ffmpeg のライセンスはビルドによって異なります。同梱・再配布時は
+  `THIRD_PARTY_NOTICES.md` と `LICENSES/` を必ず同梱してください。
+- GitHub Actions の `Build portable bundles` ワークフローでも
+  Linux / macOS / Windows 向けバンドルを生成できます。
 
 ## CLI
 

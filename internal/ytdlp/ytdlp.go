@@ -8,11 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 
+	"github.com/Mikan256/ytm-playlist-dl/internal/binmgr"
 	"github.com/Mikan256/ytm-playlist-dl/internal/model"
 	"github.com/Mikan256/ytm-playlist-dl/internal/urlutil"
 )
@@ -27,22 +27,7 @@ type Client struct {
 }
 
 func Find(explicit string) (string, error) {
-	candidates := []string{}
-	if explicit != "" {
-		candidates = append(candidates, explicit)
-	}
-	if env := os.Getenv("YTDLP_PATH"); env != "" {
-		candidates = append(candidates, env)
-	}
-	candidates = append(candidates, "yt-dlp", "yt-dlp.exe")
-	for _, candidate := range candidates {
-		if path, err := exec.LookPath(candidate); err == nil {
-			return path, nil
-		}
-	}
-	return "", errors.New(
-		"yt-dlp was not found. Install the yt-dlp standalone binary and put it on PATH",
-	)
+	return binmgr.Resolve(binmgr.YtDlp, explicit)
 }
 
 func New(explicit string) (*Client, error) {

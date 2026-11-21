@@ -5,10 +5,11 @@ YouTube Music の公開プレイリストを連番付きでダウンロードし
 Go 製 CLI / Web UI ツール。
 
 ## 依存関係
-- Go 1.22+
+- Go 1.22+（ビルド時）
 - yt-dlp（スタンドアロンバイナリ）
 - ffmpeg / ffprobe（音量処理・メタデータ埋め込みに使用）
 
+同梱バンドル版には yt-dlp / ffmpeg / ffprobe を含めることができる。
 Go 版は yt-dlp をサブプロセスとして実行する。Python ランタイムは不要。
 Web UI は Go 標準ライブラリの HTTP サーバーで動作し、静的ファイルは
 バイナリに埋め込まれる。
@@ -20,6 +21,7 @@ ytm-playlist-dl/
 │   ├── ytm-playlist-dl/       # CLI エントリポイント
 │   └── ytm-playlist-dl-web/   # Web UI エントリポイント
 ├── internal/
+│   ├── binmgr/                # yt-dlp / ffmpeg / ffprobe の探索
 │   ├── cli/                   # 引数解析・対話モード
 │   ├── config/                # JSON 設定
 │   ├── downloader/            # yt-dlp 連携・ファイル収集・並列処理
@@ -32,12 +34,16 @@ ytm-playlist-dl/
 │   ├── testutil/              # テスト用ヘルパー
 │   ├── urlutil/               # URL 正規化・ファイル名サニタイズ
 │   └── webui/                 # HTTP API・ジョブ管理
+├── scripts/
+│   └── build-bundle.sh        # 同梱配布アーカイブの生成
 ├── web/
 │   ├── embed.go               # 静的ファイルの埋め込み
 │   └── static/                # HTML / CSS / JavaScript
+├── THIRD_PARTY_NOTICES.md
 ├── go.mod
 ├── go.sum
 ├── .github/workflows/ci.yml
+├── .github/workflows/release.yml
 └── SPEC.md
 ```
 
@@ -125,6 +131,21 @@ ytm-playlist-dl/
 - `go vet ./...`
 - gofmt チェック
 - GitHub Actions（Go 1.22 / 1.23）
+
+### 15. ポータブルバンドル
+- `scripts/build-bundle.sh` で yt-dlp / ffmpeg / ffprobe を同梱
+- Linux amd64/arm64、macOS amd64/arm64、Windows amd64
+- 実行ファイル隣の `bin/` を自動探索
+- 探索順:
+  1. 明示パス
+  2. 環境変数
+  3. 実行ファイルと同じディレクトリ
+  4. 実行ファイル隣の `bin/`
+  5. カレントディレクトリ / `./bin/`
+  6. `PATH`
+- GitHub Actions の `Build portable bundles` ワークフローで生成可能
+- 同梱する ffmpeg のライセンスに応じて `LICENSES/` と
+  `THIRD_PARTY_NOTICES.md` を同梱する
 
 ## CLI
 

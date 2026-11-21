@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Mikan256/ytm-playlist-dl/internal/binmgr"
 	"github.com/Mikan256/ytm-playlist-dl/internal/config"
 	"github.com/Mikan256/ytm-playlist-dl/internal/model"
 	"github.com/Mikan256/ytm-playlist-dl/internal/urlutil"
@@ -306,6 +307,7 @@ func (d *Downloader) runWithRetries(ctx context.Context, args []string,
 
 func (d *Downloader) Download(ctx context.Context, options model.Options,
 	info model.PlaylistInfo, progress func(model.Event)) (model.DownloadResult, error) {
+	options = resolveFFmpeg(options)
 	normalized, err := normalizeInfoURL(info.URL)
 	if err != nil {
 		return model.DownloadResult{}, err
@@ -502,6 +504,16 @@ func normalizeInfoURL(value string) (string, error) {
 		return "", errors.New("playlist URL is required")
 	}
 	return urlutil.Normalize(value)
+}
+
+func resolveFFmpeg(options model.Options) model.Options {
+	if options.FFmpegPath != "" {
+		return options
+	}
+	if path, err := binmgr.Resolve(binmgr.FFmpeg, ""); err == nil {
+		options.FFmpegPath = path
+	}
+	return options
 }
 
 func unique(values []string) []string {
