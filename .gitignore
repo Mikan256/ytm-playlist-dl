@@ -1,20 +1,21 @@
-# Python
-__pycache__/
-*.pyc
-.venv/
+# Build output
+/ytm-playlist-dl
+/ytm-playlist-dl-web
+/dist/
+/bin/
+*.exe
+*.test
+coverage.out
+coverage.html
+
+# Runtime output
 downloads/
-*.egg-info/
-build/
-dist/
-.mypy_cache/
-.ruff_cache/
-.pytest_cache/
-coverage.xml
-.coverage
-
-# Generated run output
-*.log
 reports/
+*.log
+*.part
+*.ytdl
 
-# Rust
-ytm-playlist-dl/target/
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

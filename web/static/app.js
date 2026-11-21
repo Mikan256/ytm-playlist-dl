@@ -89,6 +89,7 @@
     $("loudness").value = cfg.loudness ?? -14;
     $("output").value = cfg.output || "./downloads";
     $("jobs").value = cfg.jobs ?? 1;
+    $("normalize_jobs").value = cfg.normalize_jobs ?? 1;
     $("concurrent_fragments").value = cfg.concurrent_fragments ?? 1;
     $("audio_quality").value = cfg.audio_quality || "";
     $("keep_going").checked = Boolean(cfg.keep_going);
@@ -132,6 +133,7 @@
       embed_metadata: $("embed_metadata").checked,
       embed_thumbnail: $("embed_thumbnail").checked,
       jobs: Number($("jobs").value || 1),
+      normalize_jobs: Number($("normalize_jobs").value || 1),
       concurrent_fragments: Number($("concurrent_fragments").value || 1),
       dry_run: false,
     };

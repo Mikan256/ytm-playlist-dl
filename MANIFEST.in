@@ -1,5 +1,0 @@
-recursive-include web/static *
-include README.md
-include SPEC.md
-include requirements.txt
-include requirements-dev.txt
