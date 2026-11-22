@@ -384,6 +384,14 @@ func (d *Downloader) Download(ctx context.Context, options model.Options,
 			failures = append(failures, message)
 			if !options.KeepGoing {
 				files, _ := CollectFiles(outputDir, options.Format)
+				if errors.Is(result.Err, context.Canceled) ||
+					errors.Is(result.Err, context.DeadlineExceeded) {
+					return model.DownloadResult{
+						Files:  files,
+						Failed: unique(failures),
+						Total:  info.Total,
+					}, result.Err
+				}
 				return model.DownloadResult{
 					Files:  files,
 					Failed: unique(failures),
@@ -398,6 +406,13 @@ func (d *Downloader) Download(ctx context.Context, options model.Options,
 		return model.DownloadResult{}, err
 	}
 	failures = unique(failures)
+	if ctx.Err() != nil {
+		return model.DownloadResult{
+			Files:  files,
+			Failed: failures,
+			Total:  info.Total,
+		}, ctx.Err()
+	}
 	if len(files) == 0 {
 		if options.KeepGoing && len(failures) > 0 {
 			return model.DownloadResult{

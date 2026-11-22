@@ -47,6 +47,15 @@ var TemplateLabels = map[string]string{
 	"num_artist_title": "{番号}_{アーティスト}_{曲名}",
 }
 
+var ExportFormats = []string{"none", "m3u", "csv", "json"}
+
+var ExportLabels = map[string]string{
+	"none": "出力しない",
+	"m3u":  "M3U プレイリスト",
+	"csv":  "CSV 一覧",
+	"json": "JSON 一覧",
+}
+
 var AudioExtensions = map[string]bool{
 	".aac": true, ".flac": true, ".m4a": true, ".m4b": true,
 	".mka": true, ".mp3": true, ".mp4": true, ".oga": true,
@@ -70,6 +79,7 @@ type Config struct {
 	NormalizeJobs       int     `json:"normalize_jobs"`
 	ConcurrentFragments int     `json:"concurrent_fragments"`
 	Zip                 bool    `json:"zip"`
+	ExportFormat        string  `json:"export_format"`
 }
 
 func Default() Config {
@@ -82,6 +92,7 @@ func Default() Config {
 		Jobs:                DefaultJobs,
 		NormalizeJobs:       DefaultNormalizeJobs,
 		ConcurrentFragments: DefaultConcurrentFragments,
+		ExportFormat:        "none",
 	}
 }
 

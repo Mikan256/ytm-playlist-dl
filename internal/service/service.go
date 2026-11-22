@@ -13,6 +13,7 @@ import (
 	"github.com/Mikan256/ytm-playlist-dl/internal/downloader"
 	"github.com/Mikan256/ytm-playlist-dl/internal/model"
 	"github.com/Mikan256/ytm-playlist-dl/internal/normalizer"
+	"github.com/Mikan256/ytm-playlist-dl/internal/playlistexport"
 	"github.com/Mikan256/ytm-playlist-dl/internal/report"
 )
 
@@ -122,6 +123,21 @@ func (Service) Execute(ctx context.Context, options model.Options,
 
 	runReport := report.Build(options, *info, outputDir, &downloadResult,
 		normalization, nil)
+	if options.ExportFormat != "" && options.ExportFormat != "none" &&
+		len(downloadResult.Files) > 0 {
+		exportPath, err := playlistexport.Write(
+			options.ExportFormat,
+			outputDir,
+			downloadResult.Files,
+			downloader.SelectedEntries(*info, options.Start, options.End),
+		)
+		if err != nil {
+			return finishWithError(options, *info, outputDir, &downloadResult,
+				normalization, err, progress, &result)
+		}
+		result.ExportPath = exportPath
+		runReport.ExportPath = exportPath
+	}
 	if options.Zip && len(downloadResult.Files) > 0 {
 		archivePath := filepath.Join(
 			filepath.Dir(outputDir), info.Title+".zip",

@@ -18,6 +18,17 @@ import (
 	"github.com/Mikan256/ytm-playlist-dl/internal/testutil"
 )
 
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "ytm-webui-test-*")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("YTM_PLAYLIST_DL_STATE_DIR", dir)
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
+
 func testHandler(t *testing.T, runner Runner) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(NewHandler(NewJobManager(runner)))
@@ -255,6 +266,63 @@ func TestArchiveEndpoint(t *testing.T) {
 	}
 	if len(raw) == 0 {
 		t.Fatal("archive is empty")
+	}
+}
+
+func TestJobCancel(t *testing.T) {
+	started := make(chan struct{})
+	runner := func(ctx context.Context, options model.Options,
+		info *model.PlaylistInfo, progress func(model.Event)) (model.RunResult, error) {
+		close(started)
+		<-ctx.Done()
+		return model.RunResult{}, ctx.Err()
+	}
+	manager := NewJobManagerWithHistory(runner, "")
+	job := manager.Start(model.DefaultOptions("https://youtube.com/playlist?list=PL1"))
+	<-started
+	if !manager.Cancel(job.ID) {
+		t.Fatal("cancel returned false")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	var snapshot map[string]any
+	for time.Now().Before(deadline) {
+		snapshot = job.snapshot()
+		if snapshot["status"] == "cancelled" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if snapshot["status"] != "cancelled" {
+		t.Fatalf("snapshot = %+v", snapshot)
+	}
+}
+
+func TestJobHistoryPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jobs.json")
+	runner := func(ctx context.Context, options model.Options,
+		info *model.PlaylistInfo, progress func(model.Event)) (model.RunResult, error) {
+		return model.RunResult{
+			Options: options,
+			Info:    model.PlaylistInfo{Title: "History Playlist", Total: 1},
+			Report:  map[string]any{"exit_code": 0},
+		}, nil
+	}
+	manager := NewJobManagerWithHistory(runner, path)
+	job := manager.Start(model.DefaultOptions("https://youtube.com/playlist?list=PL1"))
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if job.snapshot()["status"] == "done" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	reloaded := NewJobManagerWithHistory(runner, path)
+	jobs := reloaded.List()
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %d", len(jobs))
+	}
+	if jobs[0].summary()["playlist"] != "History Playlist" {
+		t.Fatalf("summary = %+v", jobs[0].summary())
 	}
 }
 

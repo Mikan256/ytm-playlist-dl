@@ -173,6 +173,11 @@ h3 {
   z-index: 1;
 }
 
+#download-form.dragging {
+  outline: 2px dashed var(--rust);
+  outline-offset: 8px;
+}
+
 .field label {
   font-family: var(--mono);
   font-size: 10px;
@@ -546,6 +551,12 @@ button.small { padding: 5px 9px; font-size: 10px; }
   margin-bottom: 9px;
 }
 
+.job-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
 .log {
   list-style: none;
   margin: 0;
@@ -573,6 +584,33 @@ button.small { padding: 5px 9px; font-size: 10px; }
 .log time { color: var(--rust); }
 .log .error { color: var(--danger); }
 .log .ok { color: var(--olive); }
+
+.history-head { margin-top: 18px; }
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+  font: 11px/1.5 var(--mono);
+}
+
+.history-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px dotted rgba(183, 155, 121, .55);
+  color: var(--ink);
+}
+
+.history-list .status-done { color: var(--olive); }
+.history-list .status-error { color: var(--danger); }
+.history-list .status-partial { color: #8a641d; }
+.history-list .status-cancelled { color: var(--ink-soft); }
 
 .hidden { display: none !important; }
 

@@ -13,7 +13,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OS="$(go env GOOS)"
 ARCH="$(go env GOARCH)"
 OUT=""
-VERSION="${VERSION:-0.5.0}"
+VERSION="${VERSION:-0.6.0}"
 YTDLP_PATH=""
 FFMPEG_PATH=""
 FFPROBE_PATH=""
@@ -27,7 +27,7 @@ Options:
   --os OS              linux, darwin or windows (default: go env GOOS)
   --arch ARCH          amd64 or arm64 (default: go env GOARCH)
   --out DIR            output directory (default: dist/ytm-playlist-dl-OS-ARCH)
-  --version VERSION    version embedded in the binaries (default: 0.5.0)
+  --version VERSION    version embedded in the binaries (default: 0.6.0)
   --yt-dlp PATH        use a local yt-dlp instead of downloading
   --ffmpeg PATH        use a local ffmpeg instead of downloading
   --ffprobe PATH       use a local ffprobe instead of downloading
@@ -187,6 +187,10 @@ cp -R "$ROOT/LICENSES/." "$OUT/LICENSES/"
 chmod +x "$OUT/ytm-playlist-dl$SUFFIX" "$OUT/ytm-playlist-dl-web$SUFFIX"
 if [[ "$DESKTOP" -eq 1 ]]; then
   chmod +x "$OUT/ytm-playlist-dl-desktop$SUFFIX"
+  if [[ "$OS" == "linux" ]]; then
+    cp "$ROOT/packaging/linux/ytm-playlist-dl.desktop" "$OUT/"
+    cp "$ROOT/cmd/ytm-playlist-dl-desktop/assets/icon.png" "$OUT/"
+  fi
 fi
 mkdir -p "$ROOT/dist"
 OUT_PARENT="$(dirname "$OUT")"

@@ -17,12 +17,19 @@ EBU R128 のアルバムモードで音量を統一する Go 製 CLI / Web UI �
 - ネットワークエラー時のリトライ
 - 並列トラックダウンロードと並列フラグメント取得
 - `--zip` で出力フォルダを ZIP にまとめる
+- M3U / CSV / JSON のプレイリスト一覧を出力
 - メタデータ・カバーアートの埋め込み
 - `--dry-run` / `--list-tracks`
 - JSON 設定、JSON レポート、テキストログ
+- `--doctor` で依存バイナリのパスとバージョンを確認
+- `--update-ytdlp` で最新の yt-dlp を取得
 - ブラウザ UI（レトロな紙面風デザイン、静的ファイルをバイナリに埋め込み）
-- Wails v3 によるデスクトップ版（Windows / macOS / Linux）
+- Wails v3 によるデスクトップ版（Windows / Linux）
+- デスクトップ版: フォルダ選択、ドラッグ＆ドロップ、メニュー / トレイ、
+  キャンセル、履歴、ZIP / フォルダを開く、自動更新
 - yt-dlp / ffmpeg を同梱したポータブル配布が可能
+- Linux tar.gz / deb / rpm（AppImageは手動ビルド）、Windows インストーラ
+- GitHub Releases による自動更新と SBOM 生成
 
 ## 必要環境
 
@@ -77,8 +84,8 @@ scripts/build-bundle.sh \
 
 ```text
 dist/
-├── ytm-playlist-dl-0.5.0-linux-amd64.tar.gz
-├── ytm-playlist-dl-0.5.0-windows-amd64.zip
+├── ytm-playlist-dl-0.6.0-linux-amd64.tar.gz
+├── ytm-playlist-dl-0.6.0-windows-amd64.zip
 └── ...
 ```
 
@@ -166,6 +173,14 @@ ytm-playlist-dl-linux-amd64/
 ./ytm-playlist-dl "https://www.youtube.com/watch?v=VIDEO_ID" \
   --output ./downloads --zip
 
+# M3U / CSV / JSON の一覧も出力
+./ytm-playlist-dl "https://music.youtube.com/playlist?list=PL..." \
+  --export m3u
+
+# 依存関係の確認 / yt-dlp の更新
+./ytm-playlist-dl --doctor
+./ytm-playlist-dl --update-ytdlp
+
 # MP3 + アーティスト名 + 320kbps
 ./ytm-playlist-dl "https://music.youtube.com/playlist?list=PL..." \
   --format mp3 --template num_artist_title --audio-quality 320
@@ -220,10 +235,13 @@ URL を省略すると対話モードになります。
 | `--report-file PATH` | JSON レポート出力先 | なし |
 | `--log-file PATH` | テキストログ出力先 | なし |
 | `--zip` | 出力フォルダを ZIP にまとめる | 無効 |
+| `--export {none,m3u,csv,json}` | プレイリスト一覧も出力 | `none` |
 | `--json` | 結果を JSON で標準出力 | 無効 |
 | `--output DIR` | 出力先ディレクトリ | `./downloads` |
 | `--yt-dlp PATH` | yt-dlp バイナリのパス | PATH から探索 |
 | `--ffmpeg PATH` | ffmpeg バイナリのパス | PATH から探索 |
+| `--doctor` | 依存バイナリのパスとバージョンを表示 | - |
+| `--update-ytdlp` | 最新の yt-dlp をダウンロード | - |
 
 ## Web UI
 
@@ -261,6 +279,8 @@ Web UI では以下が可能です。
 | `GET` | `/api/jobs/<id>` | ジョブ状態・進捗 |
 | `GET` | `/api/jobs/<id>/report` | JSON レポート |
 | `GET` | `/api/jobs/<id>/archive` | ZIPアーカイブ |
+| `GET` | `/api/jobs/<id>/export` | M3U / CSV / JSON |
+| `POST` | `/api/jobs/<id>/cancel` | ジョブをキャンセル |
 | `GET` | `/health` | ヘルスチェック |
 
 デスクトップ版では追加で以下を使用します。
@@ -270,7 +290,8 @@ Web UI では以下が可能です。
 | `GET` | `/api/desktop/info` | デスクトップ判定・バージョン |
 | `POST` | `/api/desktop/choose-directory` | 出力フォルダ選択 |
 | `POST` | `/api/desktop/open` | フォルダ / ファイルを開く |
-| `POST` | `/api/desktop/update` | 更新確認 |
+| `POST` | `/api/desktop/update` | アプリの更新確認 |
+| `POST` | `/api/desktop/update-ytdlp` | yt-dlp の更新 |
 
 ## デスクトップ版（Wails v3）
 
@@ -301,11 +322,21 @@ Wails v3.1 の purego バックエンドを使うため、Linux でも C コン�
 ### デスクトップ版の機能
 
 - ネイティブの出力フォルダ選択ダイアログ
-- 出力フォルダ / ZIP を開くボタン
-- アプリケーションメニュー
-- システムトレイ（ウィンドウ表示、出力フォルダ、更新確認、終了）
+- 出力フォルダ / ZIP / プレイリスト一覧を開く
+- アプリケーションメニュー / システムトレイ
+- ウィンドウを閉じるとトレイへ格納
+- ウィンドウサイズ・位置の記憶
+- ログイン時に起動
+- 完了 / 失敗の通知
+- URLのドラッグ＆ドロップ
+- 最近使ったURL
+- ダウンロード速度・残り時間表示
+- ジョブのキャンセル / 同じ設定で再実行
+- ジョブ履歴（再起動後も保持）
+- yt-dlp の更新
 - GitHub Releases を使った自動アップデート
 - Windows インストーラ（NSIS）
+- Linux deb / rpm / AppImage
 - yt-dlp / ffmpeg / ffprobe の同梱
 
 ### バイナリを同梱したデスクトップ配布
@@ -331,13 +362,27 @@ dist/ytm-playlist-dl-<version>-linux-amd64/
 ```bash
 scripts/build-windows-installer.sh \
   --bundle dist/ytm-playlist-dl-windows-amd64 \
-  --version 0.5.0 \
-  --out dist/ytm-playlist-dl-0.5.0-windows-amd64-setup.exe
+  --version 0.6.0 \
+  --out dist/ytm-playlist-dl-0.6.0-windows-amd64-setup.exe
 ```
 
 NSIS の `makensis` が必要です。インストーラはユーザー領域
 （`%LOCALAPPDATA%\Programs\ytm-playlist-dl`）にインストールし、
 デスクトップとスタートメニューにショートカットを作成します。
+
+### Linux パッケージ
+
+```bash
+scripts/build-linux-packages.sh \
+  --bundle dist/ytm-playlist-dl-linux-amd64 \
+  --arch amd64 \
+  --version 0.6.0 \
+  --out dist
+```
+
+`.deb` / `.rpm` / `.AppImage` を生成できます。
+`nfpm` と AppImage のビルドツールが必要です。
+リリースワークフローでは deb / rpm を自動生成します。
 
 ### 自動アップデート
 
@@ -358,8 +403,11 @@ SHA256SUMS
 ```
 
 `Build and release` GitHub Actions ワークフローが、タグ `v*` の push 時に
-バンドル・Windowsインストーラ・更新用バイナリ・チェックサムを生成し、
-GitHub Release を作成します。
+バンドル・Windowsインストーラ・Linux deb/rpm・更新用バイナリ・
+チェックサム・SBOMを生成し、GitHub Release を作成します。
+
+コード署名（Windows Authenticode / Linux 署名）は証明書が必要なため、
+別途設定が必要です。
 
 ## 設定ファイル
 
@@ -405,6 +453,8 @@ internal/binmgr/          yt-dlp / ffmpeg / ffprobe の探索
 internal/cli/             引数解析・対話モード
 internal/config/          JSON 設定
 internal/downloader/      yt-dlp 連携・並列ダウンロード
+internal/depupdate/       yt-dlp の更新
+internal/playlistexport/  M3U / CSV / JSON 出力
 internal/ytdlp/           yt-dlp サブプロセス・進捗解析
 internal/normalizer/      EBU R128 / ReplayGain
 internal/manifest/        正規化済み記録

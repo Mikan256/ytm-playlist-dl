@@ -89,6 +89,8 @@ type Event struct {
 	Label    string  `json:"label,omitempty"`
 	Phase    string  `json:"phase,omitempty"`
 	Percent  float64 `json:"percent,omitempty"`
+	Speed    string  `json:"speed,omitempty"`
+	ETA      string  `json:"eta,omitempty"`
 	ExitCode *int    `json:"exit_code,omitempty"`
 }
 
@@ -103,6 +105,7 @@ type RunResult struct {
 	Report        map[string]any       `json:"report"`
 	ReportPath    string               `json:"report_path,omitempty"`
 	ArchivePath   string               `json:"archive_path,omitempty"`
+	ExportPath    string               `json:"export_path,omitempty"`
 	Planned       []string             `json:"planned,omitempty"`
 	ExitCode      int                  `json:"exit_code"`
 }

@@ -20,7 +20,8 @@ import (
 const ProgressPrefix = "YTM_PROGRESS\t"
 
 const ProgressTemplate = "download:" + ProgressPrefix +
-	"%(progress._percent_str)s\t%(info.playlist_index)s\t%(info.title)s"
+	"%(progress._percent_str)s\t%(info.playlist_index)s\t%(info.title)s" +
+	"\t%(progress._speed_str)s\t%(progress._eta_str)s"
 
 type Client struct {
 	Binary string
@@ -209,7 +210,7 @@ func ParseProgress(line string) (model.Event, bool) {
 		return model.Event{}, false
 	}
 	payload := line[index+len(ProgressPrefix):]
-	parts := strings.SplitN(payload, "\t", 3)
+	parts := strings.SplitN(payload, "\t", 5)
 	if len(parts) < 3 {
 		return model.Event{}, false
 	}
@@ -222,6 +223,12 @@ func ParseProgress(line string) (model.Event, bool) {
 	event := model.Event{Type: "download", Percent: percent, Title: parts[2]}
 	if value, err := strconv.Atoi(strings.TrimSpace(parts[1])); err == nil {
 		event.Index = value
+	}
+	if len(parts) >= 4 {
+		event.Speed = strings.TrimSpace(parts[3])
+	}
+	if len(parts) >= 5 {
+		event.ETA = strings.TrimSpace(parts[4])
 	}
 	return event, true
 }

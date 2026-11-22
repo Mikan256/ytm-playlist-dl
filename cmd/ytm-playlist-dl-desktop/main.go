@@ -14,6 +14,7 @@ import (
 
 	"github.com/Mikan256/ytm-playlist-dl/internal/webui"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed assets/icon.png
@@ -46,15 +47,20 @@ func main() {
 		Name:        "ytm-playlist-dl",
 		Description: "YouTube Music playlist and video downloader",
 		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 	})
 	desktop.app = app
 
+	state := loadWindowState()
+	width, height := 1240, 900
+	if state.Width >= 900 && state.Height >= 620 {
+		width, height = state.Width, state.Height
+	}
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:              "ytm-playlist-dl",
-		Width:              1240,
-		Height:             900,
+		Width:              width,
+		Height:             height,
 		MinWidth:           900,
 		MinHeight:          620,
 		BackgroundColour:   application.NewRGB(242, 230, 210),
@@ -62,12 +68,23 @@ func main() {
 		UseApplicationMenu: true,
 	})
 	desktop.window = window
-	window.Center()
+	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		desktop.saveWindowState()
+		if !desktop.quitting {
+			e.Cancel()
+			window.Hide()
+		}
+	})
+	if state.X != 0 || state.Y != 0 {
+		window.SetPosition(state.X, state.Y)
+	} else {
+		window.Center()
+	}
 	window.Show()
 
 	desktop.updaterOK = configureUpdater(app)
-	configureMenu(app, desktop.updaterOK)
-	configureTray(app, window, icon, desktop.updaterOK)
+	configureMenu(app, desktop)
+	configureTray(app, window, icon, desktop)
 	if desktop.updaterOK {
 		startBackgroundUpdateCheck(app)
 	}

@@ -122,19 +122,30 @@ func emptyNil(value string) any {
 }
 
 type JobManager struct {
-	runner Runner
-	mu     sync.RWMutex
-	jobs   map[string]*Job
+	runner      Runner
+	mu          sync.RWMutex
+	jobs        map[string]*Job
+	historyPath string
 }
 
 func NewJobManager(runner Runner) *JobManager {
+	return NewJobManagerWithHistory(runner, historyPath())
+}
+
+func NewJobManagerWithHistory(runner Runner, path string) *JobManager {
 	if runner == nil {
 		runner = func(ctx context.Context, options model.Options,
 			info *model.PlaylistInfo, progress func(model.Event)) (model.RunResult, error) {
 			return (service.Service{}).Execute(ctx, options, info, progress)
 		}
 	}
-	return &JobManager{runner: runner, jobs: map[string]*Job{}}
+	manager := &JobManager{
+		runner: runner, jobs: map[string]*Job{}, historyPath: path,
+	}
+	for _, job := range loadHistory(path) {
+		manager.jobs[job.ID] = job
+	}
+	return manager
 }
 
 func (m *JobManager) Start(options model.Options) *Job {
@@ -158,12 +169,20 @@ func (m *JobManager) run(job *Job) {
 
 	result, err := job.runner(ctx, job.Options, nil, job.addEvent)
 	job.mu.Lock()
-	defer job.mu.Unlock()
 	job.FinishedAt = now()
 	if err != nil {
-		job.Error = err.Error()
-		job.Status = "error"
-		job.addEventLocked(model.Event{Type: "error", Message: err.Error()})
+		if errors.Is(err, context.Canceled) {
+			job.Status = "cancelled"
+			job.addEventLocked(model.Event{
+				Type: "status", Message: "キャンセルされました",
+			})
+		} else {
+			job.Error = err.Error()
+			job.Status = "error"
+			job.addEventLocked(model.Event{Type: "error", Message: err.Error()})
+		}
+		job.mu.Unlock()
+		m.persistHistory()
 		return
 	}
 	job.Result = &result
@@ -172,6 +191,39 @@ func (m *JobManager) run(job *Job) {
 	} else {
 		job.Status = "done"
 	}
+	job.mu.Unlock()
+	m.persistHistory()
+}
+
+func (j *Job) Cancel() {
+	j.mu.Lock()
+	cancel := j.cancel
+	j.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (m *JobManager) Cancel(id string) bool {
+	job := m.Get(id)
+	if job == nil {
+		return false
+	}
+	job.Cancel()
+	return true
+}
+
+func (m *JobManager) persistHistory() {
+	m.mu.RLock()
+	jobs := make([]*Job, 0, len(m.jobs))
+	for _, job := range m.jobs {
+		jobs = append(jobs, job)
+	}
+	m.mu.RUnlock()
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].CreatedAt > jobs[j].CreatedAt
+	})
+	saveHistory(m.historyPath, jobs)
 }
 
 func (j *Job) addEventLocked(event model.Event) {
@@ -251,6 +303,8 @@ func (h *Handler) config(w http.ResponseWriter, r *http.Request) {
 			"format_labels":    config.FormatDescriptions,
 			"templates":        config.TemplateChoices,
 			"template_labels":  config.TemplateLabels,
+			"export_formats":   config.ExportFormats,
+			"export_labels":    config.ExportLabels,
 			"normalize_modes":  config.NormalizeModes,
 			"normalize_labels": config.NormalizeLabels,
 			"defaults": map[string]any{
@@ -345,14 +399,27 @@ func (h *Handler) jobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) job(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", "GET")
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) < 3 {
 		h.notFound(w)
+		return
+	}
+	if len(parts) >= 4 && parts[3] == "cancel" {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !h.Manager.Cancel(parts[2]) {
+			writeError(w, http.StatusNotFound, "job not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	job := h.Manager.Get(parts[2])
@@ -387,6 +454,21 @@ func (h *Handler) job(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("attachment; filename=%q", filepath.Base(result.ArchivePath)),
 		)
 		http.ServeFile(w, r, result.ArchivePath)
+		return
+	}
+	if len(parts) >= 4 && parts[3] == "export" {
+		job.mu.Lock()
+		result := job.Result
+		job.mu.Unlock()
+		if result == nil || result.ExportPath == "" {
+			writeError(w, http.StatusNotFound, "export not ready")
+			return
+		}
+		w.Header().Set(
+			"Content-Disposition",
+			fmt.Sprintf("attachment; filename=%q", filepath.Base(result.ExportPath)),
+		)
+		http.ServeFile(w, r, result.ExportPath)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job.snapshot()})

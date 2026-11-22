@@ -16,6 +16,7 @@ import (
 
 	"github.com/Mikan256/ytm-playlist-dl/internal/cli"
 	"github.com/Mikan256/ytm-playlist-dl/internal/config"
+	"github.com/Mikan256/ytm-playlist-dl/internal/depupdate"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
@@ -26,6 +27,22 @@ type desktopHandler struct {
 	base      http.Handler
 	updaterOK bool
 	window    *application.WebviewWindow
+	quitting  bool
+}
+
+func (h *desktopHandler) quit() {
+	h.saveWindowState()
+	h.quitting = true
+	h.app.Quit()
+}
+
+func (h *desktopHandler) saveWindowState() {
+	if h.window == nil {
+		return
+	}
+	width, height := h.window.Size()
+	x, y := h.window.Position()
+	saveWindowState(width, height, x, y)
 }
 
 func (h *desktopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +89,14 @@ func (h *desktopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				h.app.Logger.Error("updater failed", "error", err)
 			}
 		}()
+		writeDesktopJSON(w, http.StatusAccepted, map[string]any{"ok": true})
+		return
+	case "/api/desktop/update-ytdlp":
+		if r.Method != http.MethodPost {
+			writeDesktopError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		updateYtDlpDesktop(h.app)
 		writeDesktopJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 		return
 	case "/api/desktop/quit":
@@ -209,12 +234,157 @@ func defaultOutputDir() string {
 	return expandHome(cfg.Output)
 }
 
+type windowState struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+	X      int `json:"x"`
+	Y      int `json:"y"`
+}
+
+func stateFile(name string) string {
+	dir := os.Getenv("YTM_PLAYLIST_DL_STATE_DIR")
+	if dir == "" {
+		cache, err := os.UserCacheDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(cache, "ytm-playlist-dl")
+	}
+	return filepath.Join(dir, name)
+}
+
+func loadWindowState() windowState {
+	path := stateFile("window.json")
+	if path == "" {
+		return windowState{}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return windowState{}
+	}
+	var state windowState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return windowState{}
+	}
+	return state
+}
+
+func saveWindowState(width, height, x, y int) {
+	path := stateFile("window.json")
+	if path == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	state := windowState{Width: width, Height: height, X: x, Y: y}
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, raw, 0o644)
+}
+
 func openOutputFolder() {
 	dir := defaultOutputDir()
 	_ = os.MkdirAll(dir, 0o755)
 	if err := openPath(dir, false); err != nil {
 		application.Get().Logger.Error("could not open output folder", "error", err)
 	}
+}
+
+func autostartFile() string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	configDir := os.Getenv("XDG_CONFIG_HOME")
+	if configDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		configDir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(configDir, "autostart", "ytm-playlist-dl.desktop")
+}
+
+func startAtLoginEnabled() bool {
+	switch runtime.GOOS {
+	case "windows":
+		return exec.Command(
+			"reg", "query",
+			`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
+			"/v", "ytm-playlist-dl",
+		).Run() == nil
+	case "linux":
+		_, err := os.Stat(autostartFile())
+		return err == nil
+	default:
+		return false
+	}
+}
+
+func setStartAtLogin(enabled bool) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	switch runtime.GOOS {
+	case "windows":
+		if enabled {
+			return exec.Command(
+				"reg", "add",
+				`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
+				"/v", "ytm-playlist-dl", "/t", "REG_SZ",
+				"/d", `"`+executable+`"`, "/f",
+			).Run()
+		}
+		return exec.Command(
+			"reg", "delete",
+			`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
+			"/v", "ytm-playlist-dl", "/f",
+		).Run()
+	case "linux":
+		path := autostartFile()
+		if path == "" {
+			return fmt.Errorf("could not determine autostart directory")
+		}
+		if !enabled {
+			err := os.Remove(path)
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		content := fmt.Sprintf(
+			"[Desktop Entry]\nType=Application\nName=ytm-playlist-dl\n"+
+				"Exec=\"%s\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+			executable,
+		)
+		return os.WriteFile(path, []byte(content), 0o644)
+	default:
+		return fmt.Errorf("start at login is not supported on %s", runtime.GOOS)
+	}
+}
+
+func updateYtDlpDesktop(app *application.App) {
+	go func() {
+		path, err := depupdate.UpdateYtDlp(context.Background(), depupdate.TargetDir())
+		if err != nil {
+			app.Dialog.Error().
+				SetTitle("yt-dlpの更新に失敗しました").
+				SetMessage(err.Error()).
+				Show()
+			return
+		}
+		app.Dialog.Info().
+			SetTitle("yt-dlpを更新しました").
+			SetMessage(path).
+			Show()
+	}()
 }
 
 func configureUpdater(app *application.App) bool {
@@ -267,7 +437,8 @@ func startBackgroundUpdateCheck(app *application.App) {
 	}()
 }
 
-func configureMenu(app *application.App, updaterOK bool) {
+func configureMenu(app *application.App, desktop *desktopHandler) {
+	updaterOK := desktop.updaterOK
 	menu := app.NewMenu()
 
 	fileMenu := menu.AddSubmenu("ファイル")
@@ -276,11 +447,20 @@ func configureMenu(app *application.App, updaterOK bool) {
 		OnClick(func(*application.Context) {
 			openOutputFolder()
 		})
+	loginItem := fileMenu.AddCheckbox("ログイン時に起動", startAtLoginEnabled())
+	loginItem.OnClick(func(ctx *application.Context) {
+		if err := setStartAtLogin(ctx.ClickedMenuItem().Checked()); err != nil {
+			app.Dialog.Error().
+				SetTitle("設定を変更できませんでした").
+				SetMessage(err.Error()).
+				Show()
+		}
+	})
 	fileMenu.AddSeparator()
 	fileMenu.Add("終了").
 		SetAccelerator("CmdOrCtrl+Q").
 		OnClick(func(*application.Context) {
-			app.Quit()
+			desktop.quit()
 		})
 
 	helpMenu := menu.AddSubmenu("ヘルプ")
@@ -292,6 +472,9 @@ func configureMenu(app *application.App, updaterOK bool) {
 				app.Logger.Error("update check failed", "error", err)
 			}
 		}()
+	})
+	helpMenu.Add("yt-dlpを更新...").OnClick(func(*application.Context) {
+		updateYtDlpDesktop(app)
 	})
 	helpMenu.Add("バージョン情報").
 		OnClick(func(*application.Context) {
@@ -308,12 +491,13 @@ func configureMenu(app *application.App, updaterOK bool) {
 }
 
 func configureTray(app *application.App, window *application.WebviewWindow,
-	icon []byte, updaterOK bool) {
+	icon []byte, desktop *desktopHandler) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			app.Logger.Error("system tray is unavailable", "error", recovered)
 		}
 	}()
+	updaterOK := desktop.updaterOK
 	tray := app.SystemTray.New()
 	tray.SetIcon(icon)
 	tray.SetLabel("ytm-playlist-dl")
@@ -336,9 +520,12 @@ func configureTray(app *application.App, window *application.WebviewWindow,
 			}
 		}()
 	})
+	trayMenu.Add("yt-dlpを更新...").OnClick(func(*application.Context) {
+		updateYtDlpDesktop(app)
+	})
 	trayMenu.AddSeparator()
 	trayMenu.Add("終了").OnClick(func(*application.Context) {
-		app.Quit()
+		desktop.quit()
 	})
 	tray.SetMenu(trayMenu)
 	tray.OnClick(func() {

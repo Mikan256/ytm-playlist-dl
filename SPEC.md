@@ -27,6 +27,8 @@ ytm-playlist-dl/
 │   ├── cli/                   # 引数解析・対話モード
 │   ├── config/                # JSON 設定
 │   ├── downloader/            # yt-dlp 連携・ファイル収集・並列処理
+│   ├── depupdate/             # yt-dlp の更新
+│   ├── playlistexport/        # M3U / CSV / JSON 出力
 │   ├── ytdlp/                 # yt-dlp 実行・JSON/進捗解析
 │   ├── normalizer/            # EBU R128 / ReplayGain
 │   ├── manifest/              # 正規化済み記録
@@ -38,9 +40,11 @@ ytm-playlist-dl/
 │   └── webui/                 # HTTP API・ジョブ管理
 ├── scripts/
 │   ├── build-bundle.sh        # 同梱配布アーカイブの生成
-│   └── build-windows-installer.sh # NSIS インストーラの生成
+│   ├── build-windows-installer.sh # NSIS インストーラの生成
+│   └── build-linux-packages.sh # deb / rpm / AppImage の生成
 ├── packaging/
-│   └── windows/installer.nsi  # Windows インストーラ定義
+│   ├── windows/installer.nsi  # Windows インストーラ定義
+│   └── linux/ytm-playlist-dl.desktop
 ├── web/
 │   ├── embed.go               # 静的ファイルの埋め込み
 │   └── static/                # HTML / CSS / JavaScript
@@ -173,23 +177,47 @@ ytm-playlist-dl/
 - Windows: WebView2、macOS: WKWebView、Linux: GTK4 / WebKitGTK 6.0
 - Linux 旧環境向け: `-tags purego,gtk3,production`（GTK3 / WebKit2GTK 4.1）
 - 出力フォルダ選択ダイアログ
-- 出力フォルダ / ZIP を開く
+- 出力フォルダ / ZIP / プレイリスト一覧を開く
 - アプリケーションメニュー / システムトレイ
+- ウィンドウを閉じるとトレイへ格納
+- ウィンドウサイズ・位置の記憶
+- ログイン時に起動
+- 完了 / 失敗の通知
+- URL のドラッグ＆ドロップ、最近使ったURL
+- ダウンロード速度 / 残り時間表示
+- ジョブのキャンセル / 同じ設定で再実行
+- ジョブ履歴の永続化
+- yt-dlp の更新
 - GitHub Releases による自動アップデート
 - Windows NSIS インストーラ
+- Linux deb / rpm / AppImage
 - macOS は今回の配布・自動更新・インストーラ対象外
 - `scripts/build-bundle.sh --desktop` で yt-dlp / ffmpeg 同梱可能
 
 ### 18. リリース
 - `.github/workflows/release.yml`
 - タグ `v*` の push で Linux / Windows のバンドルを生成
-- Windows インストーラ、更新用の裸バイナリ、`SHA256SUMS` を生成
+- Linux deb / rpm、Windows インストーラ
+- AppImage は `scripts/build-linux-packages.sh` で手動生成可能
+- 更新用の裸バイナリ、`SHA256SUMS`、SBOM を生成
 - GitHub Release を自動作成
 - 更新用アセット:
   - `ytm-playlist-dl-desktop-linux-amd64`
   - `ytm-playlist-dl-desktop-linux-arm64`
   - `ytm-playlist-dl-desktop-windows-amd64.exe`
   - `SHA256SUMS`
+
+### 19. 診断・依存更新
+- `--doctor` で yt-dlp / ffmpeg / ffprobe の解決パスとバージョンを表示
+- `--update-ytdlp` で公式の最新版を取得
+- SHA-256 チェックサム検証とアトミック置換
+- デスクトップのメニュー / トレイからも更新可能
+
+### 20. プレイリスト一覧出力
+- `--export none|m3u|csv|json`
+- 出力フォルダに `playlist.m3u` / `playlist.csv` / `playlist.json`
+- レポートに `export_path` を記録
+- Web API `GET /api/jobs/<id>/export`
 
 ## CLI
 
@@ -211,10 +239,11 @@ ytm-playlist-dl [options] [url]
 --jobs N / --normalize-jobs N / --concurrent-fragments N
 --dry-run / --list-tracks
 --report-file PATH / --log-file PATH / --json
---zip
+--zip / --export none|m3u|csv|json
 --config PATH / --save-config
 --web / --host HOST / --port PORT / --open-browser
 --yt-dlp PATH / --ffmpeg PATH
+--doctor / --update-ytdlp
 --version
 ```
 
@@ -233,6 +262,8 @@ URL 省略時は対話モード。`--web` 指定時は Web UI を起動する。
 | GET | `/api/jobs/<id>` | ジョブ状態・進捗イベント |
 | GET | `/api/jobs/<id>/report` | JSON レポート |
 | GET | `/api/jobs/<id>/archive` | ZIP アーカイブ |
+| GET | `/api/jobs/<id>/export` | M3U / CSV / JSON |
+| POST | `/api/jobs/<id>/cancel` | ジョブキャンセル |
 | GET | `/health` | ヘルスチェック |
 
 デスクトップ版のみ:
@@ -242,7 +273,8 @@ URL 省略時は対話モード。`--web` 指定時は Web UI を起動する。
 | GET | `/api/desktop/info` | デスクトップ判定・バージョン |
 | POST | `/api/desktop/choose-directory` | 出力フォルダ選択 |
 | POST | `/api/desktop/open` | フォルダ / ファイルを開く |
-| POST | `/api/desktop/update` | 更新確認 |
+| POST | `/api/desktop/update` | アプリ更新確認 |
+| POST | `/api/desktop/update-ytdlp` | yt-dlp 更新 |
 
 ## 処理フロー
 

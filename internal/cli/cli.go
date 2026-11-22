@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -15,14 +16,16 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/Mikan256/ytm-playlist-dl/internal/binmgr"
 	"github.com/Mikan256/ytm-playlist-dl/internal/config"
+	"github.com/Mikan256/ytm-playlist-dl/internal/depupdate"
 	"github.com/Mikan256/ytm-playlist-dl/internal/downloader"
 	"github.com/Mikan256/ytm-playlist-dl/internal/model"
 	"github.com/Mikan256/ytm-playlist-dl/internal/service"
 	"github.com/Mikan256/ytm-playlist-dl/internal/webui"
 )
 
-var Version = "0.5.0"
+var Version = "0.6.0"
 
 type parsedArgs struct {
 	url                 string
@@ -42,6 +45,7 @@ type parsedArgs struct {
 	embedMetadata       bool
 	embedThumbnail      bool
 	zip                 bool
+	exportFormat        string
 	jobs                int
 	normalizeJobs       int
 	concurrentFragments int
@@ -58,6 +62,8 @@ type parsedArgs struct {
 	openBrowser         bool
 	ytdlpPath           string
 	ffmpegPath          string
+	updateYtdlp         bool
+	doctor              bool
 	version             bool
 }
 
@@ -93,6 +99,12 @@ func Main(args []string) int {
 	if parsed.version {
 		fmt.Printf("ytm-playlist-dl %s\n", Version)
 		return 0
+	}
+	if parsed.updateYtdlp {
+		return updateYtDlp()
+	}
+	if parsed.doctor {
+		return doctor()
 	}
 	if parsed.web {
 		if err := webui.RunServer(parsed.host, parsed.port, parsed.openBrowser); err != nil {
@@ -160,6 +172,7 @@ func parse(args []string, cfg config.Config, configPath string) (parsedArgs, err
 	flags.BoolVar(&parsed.embedMetadata, "embed-metadata", cfg.EmbedMetadata, "embed metadata")
 	flags.BoolVar(&parsed.embedThumbnail, "embed-thumbnail", cfg.EmbedThumbnail, "embed cover art")
 	flags.BoolVar(&parsed.zip, "zip", cfg.Zip, "create a zip archive of the output")
+	flags.StringVar(&parsed.exportFormat, "export", cfg.ExportFormat, "playlist export: none, m3u, csv or json")
 	flags.IntVar(&parsed.jobs, "jobs", cfg.Jobs, "parallel track downloads")
 	flags.IntVar(&parsed.normalizeJobs, "normalize-jobs", cfg.NormalizeJobs, "parallel normalisation workers")
 	flags.IntVar(&parsed.concurrentFragments, "concurrent-fragments", cfg.ConcurrentFragments, "parallel fragments per track")
@@ -176,6 +189,8 @@ func parse(args []string, cfg config.Config, configPath string) (parsedArgs, err
 	flags.BoolVar(&parsed.openBrowser, "open-browser", false, "open the web UI in a browser")
 	flags.StringVar(&parsed.ytdlpPath, "yt-dlp", "", "path to the yt-dlp binary")
 	flags.StringVar(&parsed.ffmpegPath, "ffmpeg", "", "path to the ffmpeg binary")
+	flags.BoolVar(&parsed.updateYtdlp, "update-ytdlp", false, "download the latest yt-dlp binary")
+	flags.BoolVar(&parsed.doctor, "doctor", false, "show resolved binary paths and versions")
 	flags.BoolVar(&parsed.version, "version", false, "print version and exit")
 
 	if err := flags.Parse(args); err != nil {
@@ -223,6 +238,7 @@ func optionsFromArgs(parsed parsedArgs, cfg config.Config) model.Options {
 	options.EmbedMetadata = parsed.embedMetadata
 	options.EmbedThumbnail = parsed.embedThumbnail
 	options.Zip = parsed.zip
+	options.ExportFormat = parsed.exportFormat
 	options.Jobs = parsed.jobs
 	options.NormalizeJobs = parsed.normalizeJobs
 	options.ConcurrentFragments = parsed.concurrentFragments
@@ -341,12 +357,61 @@ func printResult(result model.RunResult, parsed parsedArgs) {
 	if result.ArchivePath != "" {
 		fmt.Printf("Archive: %s\n", result.ArchivePath)
 	}
+	if result.ExportPath != "" {
+		fmt.Printf("Playlist: %s\n", result.ExportPath)
+	}
 	if result.ReportPath != "" {
 		fmt.Printf("Report: %s\n", result.ReportPath)
 	}
 	if result.ExitCode == 2 {
 		fmt.Fprintln(os.Stderr, "Some tracks failed; see the report for details.")
 	}
+}
+
+func updateYtDlp() int {
+	fmt.Println("Downloading the latest yt-dlp...")
+	path, err := depupdate.UpdateYtDlp(context.Background(), depupdate.TargetDir())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+	fmt.Printf("yt-dlp updated: %s\n", path)
+	return 0
+}
+
+func doctor() int {
+	checks := []struct {
+		label string
+		tool  binmgr.Tool
+		args  []string
+	}{
+		{"yt-dlp", binmgr.YtDlp, []string{"--version"}},
+		{"ffmpeg", binmgr.FFmpeg, []string{"-version"}},
+		{"ffprobe", binmgr.FFprobe, []string{"-version"}},
+	}
+	failed := false
+	for _, check := range checks {
+		path, err := binmgr.Resolve(check.tool, "")
+		if err != nil {
+			fmt.Printf("%-8s : NOT FOUND\n", check.label)
+			failed = true
+			continue
+		}
+		output, err := exec.Command(path, check.args...).CombinedOutput()
+		version := strings.TrimSpace(string(output))
+		if index := strings.IndexByte(version, '\n'); index >= 0 {
+			version = version[:index]
+		}
+		if err != nil {
+			version = "found, but failed to run"
+			failed = true
+		}
+		fmt.Printf("%-8s : %s\n           %s\n", check.label, path, version)
+	}
+	if failed {
+		return 1
+	}
+	return 0
 }
 
 func interactive(cfg config.Config) int {

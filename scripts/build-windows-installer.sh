@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUNDLE=""
-VERSION="${VERSION:-0.5.0}"
+VERSION="${VERSION:-0.6.0}"
 OUT=""
 
 usage() {
@@ -12,7 +12,7 @@ Usage: scripts/build-windows-installer.sh --bundle DIR [options]
 
 Options:
   --bundle DIR       Windows bundle directory built by build-bundle.sh
-  --version VERSION  installer version (default: 0.5.0)
+  --version VERSION  installer version (default: 0.6.0)
   --out FILE         output installer path
   -h, --help         show this help
 USAGE

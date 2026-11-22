@@ -30,6 +30,7 @@ type Options struct {
 	NormalizeJobs       int     `json:"normalize_jobs"`
 	ConcurrentFragments int     `json:"concurrent_fragments"`
 	Zip                 bool    `json:"zip"`
+	ExportFormat        string  `json:"export_format"`
 	DryRun              bool    `json:"dry_run"`
 	ListTracks          bool    `json:"list_tracks"`
 	LogFile             string  `json:"log_file,omitempty"`
@@ -61,6 +62,7 @@ func OptionsFromConfig(cfg config.Config, url string) Options {
 		NormalizeJobs:       cfg.NormalizeJobs,
 		ConcurrentFragments: cfg.ConcurrentFragments,
 		Zip:                 cfg.Zip,
+		ExportFormat:        cfg.ExportFormat,
 	}
 }
 
@@ -81,6 +83,7 @@ func (o Options) Config() config.Config {
 		NormalizeJobs:       o.NormalizeJobs,
 		ConcurrentFragments: o.ConcurrentFragments,
 		Zip:                 o.Zip,
+		ExportFormat:        o.ExportFormat,
 	}
 }
 
@@ -96,6 +99,9 @@ func (o Options) Validate() error {
 	}
 	if !contains(config.NormalizeModes, o.NormalizeMode) {
 		return fmt.Errorf("unknown normalize mode: %s", o.NormalizeMode)
+	}
+	if !contains(config.ExportFormats, o.ExportFormat) {
+		return fmt.Errorf("unknown export format: %s", o.ExportFormat)
 	}
 	if o.Loudness < config.LoudnessMin || o.Loudness > config.LoudnessMax {
 		return fmt.Errorf(
@@ -176,8 +182,12 @@ func FromMap(data map[string]any, url string) (Options, error) {
 	if options.ConcurrentFragments == 0 {
 		options.ConcurrentFragments = config.DefaultConcurrentFragments
 	}
+	if options.ExportFormat == "" {
+		options.ExportFormat = "none"
+	}
 	options.Format = strings.ToLower(options.Format)
 	options.NormalizeMode = strings.ToLower(options.NormalizeMode)
+	options.ExportFormat = strings.ToLower(options.ExportFormat)
 	options.URL = strings.TrimSpace(options.URL)
 	options.TemplateString = trimOptional(options.TemplateString)
 	options.AudioQuality = trimOptional(options.AudioQuality)

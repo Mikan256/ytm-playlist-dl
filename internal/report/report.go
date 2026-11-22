@@ -16,6 +16,7 @@ type Report struct {
 	Playlist      model.PlaylistInfo         `json:"playlist"`
 	OutputDir     string                     `json:"output_dir"`
 	ArchivePath   string                     `json:"archive_path,omitempty"`
+	ExportPath    string                     `json:"export_path,omitempty"`
 	Download      *model.DownloadResult      `json:"download"`
 	Normalization *model.NormalizationResult `json:"normalization"`
 	Failed        []string                   `json:"failed"`

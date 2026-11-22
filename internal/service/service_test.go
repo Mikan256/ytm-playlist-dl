@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Mikan256/ytm-playlist-dl/internal/model"
@@ -181,6 +182,34 @@ exit 0
 		t.Fatal(err)
 	}
 	if result.Report["archive_path"] != result.ArchivePath {
+		t.Fatalf("report = %+v", result.Report)
+	}
+}
+
+func TestPlaylistExport(t *testing.T) {
+	options := baseOptions(t)
+	options.Format = "original"
+	options.NormalizeMode = "off"
+	options.ExportFormat = "m3u"
+	result, err := (Service{}).Execute(context.Background(), options, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ExportPath == "" {
+		t.Fatal("export path is empty")
+	}
+	if _, err := os.Stat(result.ExportPath); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(result.ExportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsSuffix(result.ExportPath, "playlist.m3u") ||
+		!strings.Contains(string(raw), "#EXTM3U") {
+		t.Fatalf("unexpected export: %s\n%s", result.ExportPath, raw)
+	}
+	if result.Report["export_path"] != result.ExportPath {
 		t.Fatalf("report = %+v", result.Report)
 	}
 }

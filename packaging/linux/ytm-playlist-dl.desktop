@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ytm-playlist-dl
+Comment=Download YouTube Music playlists and videos
+Exec=/opt/ytm-playlist-dl/ytm-playlist-dl-desktop
+Icon=/opt/ytm-playlist-dl/icon.png
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+StartupWMClass=ytm-playlist-dl

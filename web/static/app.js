@@ -10,6 +10,7 @@
     busy: false,
     desktop: false,
     desktopInfo: null,
+    lastPayload: null,
   };
 
   const STATUS = {
@@ -18,6 +19,7 @@
     done: ["完了", "done"],
     partial: ["一部失敗", "partial"],
     error: ["エラー", "error"],
+    cancelled: ["キャンセル", "idle"],
   };
 
   async function api(path, options = {}) {
@@ -46,6 +48,26 @@
     toast.timer = window.setTimeout(() => {
       element.classList.add("hidden");
     }, 4500);
+  }
+
+  function notify(title, body) {
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body });
+      }
+    } catch (_) {
+      // 通知が使えなくても処理は継続する
+    }
+  }
+
+  async function ensureNotificationPermission() {
+    try {
+      if ("Notification" in window && Notification.permission === "default") {
+        await Notification.requestPermission();
+      }
+    } catch (_) {
+      // 通知が使えなくても処理は継続する
+    }
   }
 
   function setBadge(text, kind) {
@@ -87,6 +109,10 @@
       $("normalize_mode"), data.normalize_modes,
       data.normalize_labels, cfg.normalize_mode
     );
+    fillSelect(
+      $("export_format"), data.export_formats,
+      data.export_labels, cfg.export_format
+    );
     $("template_string").value = cfg.template_string || "";
     $("loudness").value = cfg.loudness ?? -14;
     $("output").value = cfg.output || "./downloads";
@@ -114,8 +140,63 @@
     }
   }
 
-  async function checkDesktop() {
+  const RECENT_KEY = "ytm-playlist-dl.recent-urls";
+
+  function loadRecentUrls() {
+    const list = $("recent-urls");
+    list.replaceChildren();
+    let urls = [];
     try {
+      urls = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    } catch (_) {
+      urls = [];
+    }
+    for (const url of urls) {
+      const option = document.createElement("option");
+      option.value = url;
+      list.append(option);
+    }
+  }
+
+  function rememberUrl(url) {
+    if (!url) return;
+    let urls = [];
+    try {
+      urls = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    } catch (_) {
+      urls = [];
+    }
+    urls = [url, ...urls.filter((item) => item !== url)].slice(0, 10);
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(urls));
+    } catch (_) {
+      // localStorageが使えなくても致命的ではない
+    }
+    loadRecentUrls();
+  }
+
+  function setupDragAndDrop() {
+    const form = $("download-form");
+    form.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      form.classList.add("dragging");
+    });
+    form.addEventListener("dragleave", () => form.classList.remove("dragging"));
+    form.addEventListener("drop", (event) => {
+      event.preventDefault();
+      form.classList.remove("dragging");
+      const text =
+        event.dataTransfer.getData("text/uri-list") ||
+        event.dataTransfer.getData("text/plain");
+      const url = (text || "").split("\n")[0].trim();
+      if (!url) return;
+      $("url").value = url;
+      rememberUrl(url);
+      fetchInfo();
+    });
+  }
+
+  async function checkDesktop() {    try {
       const data = await api("/api/desktop/info");
       state.desktop = Boolean(data.desktop);
       state.desktopInfo = data;
@@ -169,6 +250,48 @@
     }
   }
 
+  async function cancelJob() {
+    if (!state.jobId) return;
+    try {
+      await api(`/api/jobs/${state.jobId}/cancel`, {
+        method: "POST",
+        body: "{}",
+      });
+      toast("キャンセルしました");
+    } catch (error) {
+      toast(`キャンセルに失敗しました: ${error.message}`, true);
+    }
+  }
+
+  function updateJobActions(status) {
+    const running = status === "running" || status === "queued";
+    $("cancel-button").classList.toggle("hidden", !running);
+    $("retry-button").classList.toggle(
+      "hidden", running || !state.lastPayload
+    );
+  }
+
+  async function loadHistory() {
+    try {
+      const data = await api("/api/jobs");
+      const list = $("history-list");
+      list.replaceChildren();
+      for (const job of (data.jobs || []).slice(0, 12)) {
+        if (!job.playlist && !job.finished_at) continue;
+        const item = document.createElement("li");
+        const title = document.createElement("span");
+        title.textContent = job.playlist || "(履歴)";
+        const status = document.createElement("span");
+        status.className = `status-${job.status}`;
+        status.textContent = (STATUS[job.status] || [job.status])[0];
+        item.append(title, status);
+        list.append(item);
+      }
+    } catch (_) {
+      // 履歴は補助情報なので失敗しても無視する
+    }
+  }
+
   function optionalInt(id) {
     const raw = $(id).value.trim();
     return raw ? Number(raw) : null;
@@ -191,6 +314,7 @@
       embed_metadata: $("embed_metadata").checked,
       embed_thumbnail: $("embed_thumbnail").checked,
       zip: $("zip").checked,
+      export_format: $("export_format").value,
       jobs: Number($("jobs").value || 1),
       normalize_jobs: Number($("normalize_jobs").value || 1),
       concurrent_fragments: Number($("concurrent_fragments").value || 1),
@@ -240,6 +364,7 @@
       $("url").focus();
       return;
     }
+    rememberUrl(payload.url);
     setBusy(true);
     setBadge("情報取得中", "running");
     try {
@@ -275,6 +400,8 @@
     }
     payload.dry_run = dryRun;
     if (dryRun) payload.normalize_mode = "off";
+    state.lastPayload = payload;
+    rememberUrl(payload.url);
 
     stopPolling();
     state.jobId = null;
@@ -286,7 +413,9 @@
       ? "ドライランを実行中..."
       : "ジョブを開始しています...";
     setBadge(dryRun ? "ドライラン" : "開始中", "running");
+    updateJobActions("running");
     setBusy(true);
+    ensureNotificationPermission();
 
     try {
       const data = await api("/api/jobs", {
@@ -298,6 +427,7 @@
     } catch (error) {
       setBusy(false);
       setBadge("エラー", "error");
+      updateJobActions("error");
       $("progress-label").textContent = error.message;
       toast(`開始に失敗しました: ${error.message}`, true);
     }
@@ -342,8 +472,12 @@
     const percent = total > 0 ? Math.min(100, (current / total) * 100) : 0;
     $("progress-bar").style.width = `${percent}%`;
     if (event.type === "download") {
+      const details = [];
+      if (event.speed) details.push(event.speed);
+      if (event.eta) details.push(`残り ${event.eta}`);
+      const suffix = details.length ? ` (${details.join(" · ")})` : "";
       $("progress-label").textContent =
-        `${current}/${total} 曲目をダウンロード: ${event.title}`;
+        `${current}/${total} 曲目をダウンロード: ${event.title}${suffix}`;
     } else {
       const phase = event.phase === "analysing" ? "解析" : "正規化";
       $("progress-label").textContent =
@@ -417,6 +551,20 @@
       }
       box.append(summaryRow("アーカイブ", archiveWrap));
     }
+    if (result.export_path) {
+      const exportLink = document.createElement("a");
+      exportLink.href = `/api/jobs/${state.jobId}/export`;
+      exportLink.textContent = "プレイリストをダウンロード";
+      const exportWrap = document.createElement("span");
+      exportWrap.append(exportLink);
+      if (state.desktop) {
+        exportWrap.append(" ");
+        exportWrap.append(smallButton("開く", () => {
+          openDesktopPath(result.export_path, true);
+        }));
+      }
+      box.append(summaryRow("プレイリスト", exportWrap));
+    }
 
     if (result.planned && result.planned.length) {
       box.append(summaryRow("予定曲数", String(result.planned.length)));
@@ -457,24 +605,37 @@
     log.scrollTop = log.scrollHeight;
     updateProgress(events);
     renderSummary(job);
+    updateJobActions(job.status);
 
     if (job.status === "done") {
       $("progress-bar").style.width = "100%";
       $("progress-label").textContent = "完了しました";
       setBusy(false);
       stopPolling();
+      loadHistory();
       toast("処理が完了しました");
+      notify("ytm-playlist-dl", "ダウンロードが完了しました");
     } else if (job.status === "partial") {
       $("progress-bar").style.width = "100%";
       $("progress-label").textContent = "一部の曲でエラーが発生しました";
       setBusy(false);
       stopPolling();
+      loadHistory();
       toast("一部の曲でエラーが発生しました", true);
+      notify("ytm-playlist-dl", "一部の曲でエラーが発生しました");
     } else if (job.status === "error") {
       $("progress-label").textContent = job.error || "エラー";
       setBusy(false);
       stopPolling();
+      loadHistory();
       toast(`エラー: ${job.error || "不明なエラー"}`, true);
+      notify("ytm-playlist-dl", job.error || "エラーが発生しました");
+    } else if (job.status === "cancelled") {
+      $("progress-label").textContent = "キャンセルされました";
+      setBusy(false);
+      stopPolling();
+      loadHistory();
+      toast("キャンセルしました");
     }
   }
 
@@ -483,11 +644,14 @@
     try {
       const data = await api(`/api/jobs/${state.jobId}`);
       renderJob(data.job);
-      if (["done", "partial", "error"].includes(data.job.status)) return;
+      if (["done", "partial", "error", "cancelled"].includes(data.job.status)) {
+        return;
+      }
     } catch (error) {
       setBadge("エラー", "error");
       $("progress-label").textContent = error.message;
       setBusy(false);
+      updateJobActions("error");
       toast(`状況取得に失敗しました: ${error.message}`, true);
       return;
     }
@@ -508,6 +672,7 @@
   }
 
   function bind() {
+    setupDragAndDrop();
     $("download-form").addEventListener("submit", (event) => {
       event.preventDefault();
       startJob(false);
@@ -517,11 +682,25 @@
     $("save-config-button").addEventListener("click", saveConfig);
     $("browse-output").addEventListener("click", browseOutput);
     $("update-button").addEventListener("click", checkForUpdates);
+    $("cancel-button").addEventListener("click", cancelJob);
+    $("retry-button").addEventListener("click", () => startJob(false));
     $("clear-log").addEventListener("click", () => $("log").replaceChildren());
     $("url").addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
         fetchInfo();
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && event.key === "Enter") {
+        event.preventDefault();
+        startJob(false);
+      } else if (modifier && event.key.toLowerCase() === "i") {
+        event.preventDefault();
+        fetchInfo();
+      } else if (event.key === "Escape") {
+        $("toast").classList.add("hidden");
       }
     });
     $("fmt").addEventListener("change", () => {
@@ -533,7 +712,9 @@
 
   window.addEventListener("DOMContentLoaded", async () => {
     bind();
+    loadRecentUrls();
     await loadConfig();
     await checkDesktop();
+    await loadHistory();
   });
 })();
